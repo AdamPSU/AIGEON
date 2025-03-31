@@ -30,7 +30,7 @@ from tqdm import tqdm
 
 from cell import Cell
 from cell_collection import CellCollection
-from config import COUNTRY_PATH, ADMIN_1_PATH, ADMIN_2_PATH, MIN_CELL_SIZE, MAX_CELL_SIZE
+from config import ADMIN_0_PATH, ADMIN_1_PATH, ADMIN_2_PATH, MIN_CELL_SIZE, MAX_CELL_SIZE
 
 # Constants
 CRS = 'EPSG:4326'
@@ -171,7 +171,7 @@ class GeocellCreator:
         print(' ... loaded admin 1 boundaries.')
 
         # Load countries
-        countries = gpd.read_file(COUNTRY_PATH)
+        countries = gpd.read_file(ADMIN_0_PATH)
         countries = countries.set_crs(crs=CRS)
         countries['geometry'] = countries['geometry'].apply(lambda x: x.buffer(0))
         print(' ... loaded countries.')

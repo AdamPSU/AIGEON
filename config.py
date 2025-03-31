@@ -1,9 +1,7 @@
-from transformers import TrainingArguments
-
 # Political boundaries
-ADMMIN_0_PATH = 'data/geocells/adm_0.gpkg'
-ADMIN_1_PATH = 'data/geocells/adm_1.gpkg'
-ADMIN_2_PATH = 'data/geocells/adm_2.gpkg'
+ADMIN_0_PATH = 'data/geocells/admin_data/adm_0.gpkg'
+ADMIN_1_PATH = 'data/geocells/admin_data/adm_1.gpkg'
+ADMIN_2_PATH = 'data/geocells/admin_data/adm_2.gpkg'
 
 # Geocell creation
 MIN_CELL_SIZE = 1000 
