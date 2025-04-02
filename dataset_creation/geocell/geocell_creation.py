@@ -1,17 +1,12 @@
 import sys
 import os
 
-# Get the directory of the current script
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 if __name__ == '__main__':
-    # The script is being run directly
-    # Get the project directory (parent of the script directory)
     project_dir = os.path.dirname(script_dir)
     project_dir = os.path.dirname(project_dir)
 else:
-    # The script is being imported
-    # In this case, we'll assume the current directory is the project directory
     project_dir = os.getcwd()
 
 # Add the project directory to sys.path
@@ -34,8 +29,8 @@ from config import ADMIN_0_PATH, ADMIN_1_PATH, ADMIN_2_PATH, MIN_CELL_SIZE, MAX_
 
 # Constants
 CRS = 'EPSG:4326'
-NEEDED_COLS = ['id', 'lat', 'lng', 'selection', 'country_name']
-LEVEL_NAMES = ['country_id', 'admin_1_id', 'admin_2_id']
+NEEDED_COLS = ['id', 'lat', 'lng', 'country_name']
+ADMIN_NAMES = ['GID_0', 'GID_1', 'GID_2']
 
 # Special Country Lists
 COPY_COUNTRY_ALLOW = ['Faroe Islands', 'Isle of Man', 'United States Minor Outlying Isl', 'Curaçao', 'Jersey']
@@ -50,19 +45,16 @@ class GeocellCreator:
             df (pd.DataFrame): Pandas dataframe used during training.
             output_file (str): Where the geocells should be saved to.
         """
-        assert all([x in df.columns for x in NEEDED_COLS]), f'Dataframe must contain all of the following \
-            columns: {NEEDED_COLS}. Also, "selection" is used to filter out all rows with value "train".'
-        
+
         # Save properties
         self.output = output_file
         self.cells = None
 
-        # Load dataframe
-        self.df = df[df['selection'] == 'train'].copy().reset_index()
-
-        keep_cols = [x for x in self.df.columns if x in NEEDED_COLS or x in LEVEL_NAMES]
-        self.df = self.df[keep_cols].copy()
-        self.df = gpd.GeoDataFrame(self.df, geometry=gpd.points_from_xy(self.df.lng, self.df.lat), crs='EPSG:4326')
+        self.gdf = gpd.GeoDataFrame(
+            df, 
+            geometry=gpd.points_from_xy(df.lng, df.lat), 
+            crs='EPSG:4326'
+        )
 
     def generate(self, min_cell_size: int=MIN_CELL_SIZE, max_cell_size: int=MAX_CELL_SIZE):
         """Generate geocells.
@@ -95,14 +87,14 @@ class GeocellCreator:
             files, can go out of scope as quickly as possible to free up memory.
         """
         # Load boundaries and assign IDs
-        cols = [str(x) for x in self.df.columns]
-        if all([x in cols for x in LEVEL_NAMES]) == False or self.df[LEVEL_NAMES].isnull().sum().sum() > 0:
+        cols = [str(x) for x in self.gdf.columns]
+        if all([x in cols for x in ADMIN_NAMES]) == False or self.gdf[ADMIN_NAMES].isnull().sum().sum() > 0:
             boundaries = self._load_geo_boundaries()
-            for name, boundary in zip(LEVEL_NAMES, boundaries):
-                self.df = self._assign_boundary_ids(self.df, boundary, name)
-                self.df = self._apply_nearest_match(self.df, name)
+            for name, boundary in zip(ADMIN_NAMES, boundaries):
+                self.gdf = self._assign_boundary_ids(self.gdf, boundary, name)
+                self.gdf = self._apply_nearest_match(self.gdf, name)
 
-            #self.df.to_csv('data/data_yfcc_augmented_non_contaminated.csv', index=False)
+            self.gdf.to_csv('data/training/locations/locations.csv', index=False)
         
         else:
             boundaries = self._load_geo_boundaries(most_granular=True)
@@ -110,7 +102,7 @@ class GeocellCreator:
         # Initialize all geocells
         initialize_cell_fnc = functools.partial(self.__initialize_cell, boundaries[2], min_cell_size)
         tqdm.pandas(desc='Initializing geocells for every admin 2 area')
-        cells = self.df.groupby(LEVEL_NAMES[2]).progress_apply(initialize_cell_fnc)
+        cells = self.gdf.groupby(ADMIN_NAMES[2]).progress_apply(initialize_cell_fnc)
         cells = [item for sublist in cells for item in sublist]
 
         # Add unassigned areas to cells
@@ -131,12 +123,12 @@ class GeocellCreator:
             Cell: Geocell.
         """
         # Get metadata
-        name = df.iloc[0][LEVEL_NAMES[2]]
-        admin_1 = df.iloc[0][LEVEL_NAMES[1]]
-        country = df.iloc[0][LEVEL_NAMES[0]]
+        name = df.iloc[0][ADMIN_NAMES[2]]
+        admin_1 = df.iloc[0][ADMIN_NAMES[1]]
+        country = df.iloc[0][ADMIN_NAMES[0]]
 
         # Get shapes
-        polygon_ids = np.array([int(x) for x in df[LEVEL_NAMES[2]].unique()])
+        polygon_ids = np.array([int(x) for x in df[ADMIN_NAMES[2]].unique()])
         points = df['geometry'].values.tolist()
         polygons = admin_2_boundary.iloc[polygon_ids].geometry.unique().tolist()
 
@@ -190,7 +182,7 @@ class GeocellCreator:
         Returns:
             gpd.GeoDataFrame: df augmented with boundary ID data.
         """
-        found_points = df.sindex.query_bulk(ref_df.geometry, predicate='covers')
+        found_points = df.sindex.query(ref_df.geometry, predicate='covers')
         for i in range(len(ref_df.index)):
             mask = (found_points[0] == i)
             indices = found_points[1][mask].tolist()
@@ -248,6 +240,6 @@ class GeocellCreator:
 
 
 if __name__ == '__main__':
-    df = pd.read_csv('data/data_yfcc_augmented_non_contaminated.csv')
-    geocell_creator = GeocellCreator(df, 'data/geocells_yfcc.csv')
+    df = pd.read_csv('data/training/locations/locations.csv')
+    geocell_creator = GeocellCreator(df, 'data/geocells/cells/inat2017_cells.csv')
     geocells = geocell_creator.generate()

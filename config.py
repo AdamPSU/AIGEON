@@ -7,6 +7,8 @@ ADMIN_2_PATH = 'data/geocells/admin_data/adm_2.gpkg'
 MIN_CELL_SIZE = 1000 
 MAX_CELL_SIZE = 2000 
 
+CRS = 'EPSG:4326'
+
 # Geocells path
 GEOCELL_PATH = 'data/geocells_yfcc.csv' 
 
