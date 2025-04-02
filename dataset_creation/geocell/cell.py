@@ -8,7 +8,7 @@ from shapely.errors import TopologicalError
 from typing import List, Any, Tuple
 from sklearn.cluster import OPTICS
 from scipy.spatial import Voronoi
-from voronoi import voronoi_finite_polygons
+from .voronoi import voronoi_finite_polygons
 
 CRS = 'EPSG:4326'
 CELL_COLUMNS = ['id', 'lng', 'lat']

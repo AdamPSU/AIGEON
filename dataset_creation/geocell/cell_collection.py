@@ -5,7 +5,7 @@ import geopandas as gpd
 from tqdm import tqdm
 from typing import Iterable, Any, List
 from shapely.affinity import scale
-from cell import Cell
+from .cell import Cell
 
 CRS = 'EPSG:4326'
 GEOCELL_COLUMNS = ['name', 'admin_1', 'country', 'size', 'num_polygons', 'geometry']

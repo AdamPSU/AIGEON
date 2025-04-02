@@ -23,8 +23,8 @@ import geopandas as gpd
 from typing import Tuple, List
 from tqdm import tqdm
 
-from cell import Cell
-from cell_collection import CellCollection
+from .cell import Cell
+from .cell_collection import CellCollection
 from config import ADMIN_0_PATH, ADMIN_1_PATH, ADMIN_2_PATH, MIN_CELL_SIZE, MAX_CELL_SIZE
 
 # Constants
