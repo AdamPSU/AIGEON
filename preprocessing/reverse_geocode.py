@@ -10,9 +10,16 @@ import geopandas as gpd
 import pandas as pd 
 import json 
 
-from config import ADMIN_0_PATH
+from config import ADMIN_0_PATH, LOC_PATH, CRS
 
-def save_data(location_path, adm_0_path, output_path): 
+
+FINAL_COLS = ['id', 'lat', 'lon', 'GID_0']
+
+def prepare_data(location_path, adm_0_path, output_path): 
+    """
+    Adds country code column to location metadata.
+    """
+
     adm_0_gdf = gpd.read_file(adm_0_path)
 
     with open(location_path, 'r') as f: 
@@ -24,20 +31,19 @@ def save_data(location_path, adm_0_path, output_path):
     # Convert loc_df to gdf
     gdf = gpd.GeoDataFrame(
         loc_df, 
-        geometry=gpd.points_from_xy(loc_df['lon'], loc_df['lat']), 
-        crs="EPSG:4326"
+        geometry=gpd.points_from_xy(loc_df['lon'], loc_df['lat']),
+        crs=CRS
     )
 
-    gdf = gpd.sjoin(gdf, adm_0_gdf[['COUNTRY', 'geometry']], how='left', predicate='within')
-    df = gdf[['id', 'lat', 'lon', 'COUNTRY']].rename(columns={'lon': 'lng', 'COUNTRY': 'country_name'})
+    # Spatial join to obtain GID_0 column
+    gdf = gpd.sjoin(gdf, adm_0_gdf[['GID_0', 'geometry']], how='left', predicate='within')
+    df = gdf[FINAL_COLS].rename(columns={'GID_0': 'gid_0'})
 
     df.to_csv(output_path , index=False)
     
 if __name__ == '__main__': 
-    location_path = 'data/inaturalist_2017/locations/train2017_locations.json'
-    output_path = 'data/training/locations/locations.csv'
-
-    save_data(location_path, ADMIN_0_PATH, output_path)
+    raw_loc_path = 'data/inaturalist_2017/locations/train2017_locations.json'
+    prepare_data(raw_loc_path, ADMIN_0_PATH, LOC_PATH)
 
 
 
