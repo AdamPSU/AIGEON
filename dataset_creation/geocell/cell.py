@@ -10,13 +10,13 @@ from sklearn.cluster import OPTICS
 from scipy.spatial import Voronoi
 from .voronoi import voronoi_finite_polygons
 
-CRS = 'EPSG:4326'
-CELL_COLUMNS = ['id', 'lng', 'lat']
+from config import CRS 
+
+CELL_COLUMNS = ['id', 'lon', 'lat']
 GEOCELL_COLUMNS = ['name', 'admin_1', 'country', 'size', 'num_polygons', 'geometry']
 
 class Cell:
-    """Abstraction of a geocell.
-    """
+    """Abstraction of a geocell."""
     def __init__(self, cell_id: str, admin_1: str, country: str,
                  points: List[Point], polygons: List[Polygon]):
         """Initializes a geocell.
@@ -100,7 +100,7 @@ class Cell:
         """Generate coordinates from points in the cell.
 
         Returns:
-            np.ndarray: coordinates (lng, lat)
+            np.ndarray: coordinates (lon, lat)
         """
         return np.array([[x.x, x.y] for x in self.points])
 
@@ -109,7 +109,7 @@ class Cell:
         """Computes the centroid of the geocell.
 
         Returns:
-            np.ndarray: coordinates of centroid (lng,lat)
+            np.ndarray: coordinates of centroid (lon,lat)
         """
         # COMPUTATION BASED ON POINTS:
         return np.mean(self.coords, axis=0)
@@ -202,7 +202,7 @@ class Cell:
         """
         data = [[self.cell_id, p.x, p.y] for p in self.points]
         df = pd.DataFrame(data=data, columns=CELL_COLUMNS)
-        df = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.lng, df.lat), crs=CRS)
+        df = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.lon, df.lat), crs=CRS)
         return df
 
     def __separate_points(self, points: List[Point], polygons: List[Polygon],
@@ -287,7 +287,7 @@ class Cell:
         polygons = self.voronoi_polygons()
 
         # Separate out points
-        cluster_df = df[df['cluster'] == cluster][['lng', 'lat']]
+        cluster_df = df[df['cluster'] == cluster][['lon', 'lat']]
         assert len(cluster_df.index) > 0, 'Dataframe does not contain a cluster'
         cluster_points = [self.points[i] for i in cluster_df.index]
         cluster_polys = [polygons[i] for i in cluster_df.index]
@@ -309,8 +309,8 @@ class Cell:
         # Assign unassigned points based on cluster centroids
         assigned_df = df[df['cluster'].isin(non_null_large_clusters)]
         unassigned_df = df[df['cluster'].isin(non_null_large_clusters) == False]
-        cc = assigned_df.groupby(['cluster'])[['lng', 'lat']].mean().reset_index()
-        cc = gpd.GeoDataFrame(cc, geometry=gpd.points_from_xy(cc.lng, cc.lat), crs=CRS)
+        cc = assigned_df.groupby(['cluster'])[['lon', 'lat']].mean().reset_index()
+        cc = gpd.GeoDataFrame(cc, geometry=gpd.points_from_xy(cc.lon, cc.lat), crs=CRS)
 
         # Assign unassigned points
         nearest_index = cc.sindex.nearest(unassigned_df.geometry, return_all=False)[1]
@@ -321,13 +321,13 @@ class Cell:
             return self._separate_single_cluster(df, cluster=cc.iloc[0]['cluster'])
         
         else:
-            polygons = self.voronoi_polygons(coords=cc[['lng', 'lat']].values)
+            polygons = self.voronoi_polygons(coords=cc[['lon', 'lat']].values)
 
             # Separate out clusters
             new_cells = []
             for cluster, polygon in zip(cc['cluster'].unique(), polygons):
-                cluster_coords = df[df['cluster'] == cluster][['lng', 'lat']]
-                cluster_points = [Point(row.lng, row.lat) for _, row in cluster_coords.iterrows()]
+                cluster_coords = df[df['cluster'] == cluster][['lon', 'lat']]
+                cluster_points = [Point(row.lon, row.lat) for _, row in cluster_coords.iterrows()]
                 new_cell = self.__separate_points(cluster_points, [polygon], contain_points=True)
                 new_cells.append(new_cell)
 
@@ -351,12 +351,12 @@ class Cell:
             return []
 
         # Get dataframe
-        df = pd.DataFrame(data=self.coords, columns=['lng', 'lat'])
-        df = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.lng, df.lat), crs=CRS)
+        df = pd.DataFrame(data=self.coords, columns=['lon', 'lat'])
+        df = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.lon, df.lat), crs=CRS)
 
         # Cluster
         clusterer = OPTICS(min_samples=cluster_args[0], xi=cluster_args[1])
-        df['cluster'] = clusterer.fit_predict(df[['lng', 'lat']].values)
+        df['cluster'] = clusterer.fit_predict(df[['lon', 'lat']].values)
         
         # No clusters found
         unique_clusters = df['cluster'].nunique()
