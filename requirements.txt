@@ -1,9 +1,14 @@
-tqdm 
-pandas 
-geopandas
-numpy 
-torch 
+# Core packages
+tqdm
+pandas
+numpy
 matplotlib
-voronoi
-pygeos  
 scikit-learn
+
+# Geospatial
+geopandas
+pygeos
+voronoi
+
+# Torch with CUDA 12.1 (requires pip >= 21.3)
+torch==2.1.2+cu121 --index-url https://download.pytorch.org/whl/cu121
