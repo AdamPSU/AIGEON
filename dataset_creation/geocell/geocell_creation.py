@@ -91,16 +91,16 @@ class GeocellCreator:
 
         # Extract metadata from the first row
         row = gdf.iloc[0]
-        name, admin_1, country = row[ADMIN_NAMES[2]], row[ADMIN_NAMES[1]], row[ADMIN_NAMES[0]]
+        admin_0, admin_1, admin_2 = row[ADMIN_NAMES[2]], row[ADMIN_NAMES[1]], row[ADMIN_NAMES[0]]
 
         # Get point geometries
         points = gdf.geometry.tolist()
 
         # Get polygon geometry from lookup
-        polygon = admin_2_lookup.get(name)
+        polygon = admin_2_lookup.get(admin_0)
         polygons = [polygon] if polygon is not None else []
 
-        return Cell(name, admin_1, country, points, polygons)
+        return Cell(admin_0, admin_1, admin_2, points, polygons)
 
     def _load_granular_boundaries(self):
         """Loads geographic boundaries at the admin 2 level."""
@@ -123,18 +123,19 @@ class GeocellCreator:
             admin_2 (gpd.GeoDataFrame): Admin 2 boundary GeoDataFrame.
         """
 
+        # Project, since centroids can't be calculated from lat/long  
+        proj_admin_2 = admin_2.to_crs(epsg=4087)
+
         # Build quick access to cell objects
         cell_map = {int(cell.cell_id): cell for cell in cells}
         assigned_idx = set(cell_map.keys())
 
         # Identify assigned and unassigned polygons
         is_assigned = admin_2.index.isin(assigned_idx)
-        if is_assigned.all():
-            return  # Nothing to do — all polygons are assigned
 
-        assigned = admin_2.loc[is_assigned].copy()
-        unassigned = admin_2.loc[~is_assigned].copy()
-
+        assigned = proj_admin_2.loc[is_assigned].copy()
+        unassigned = proj_admin_2.loc[~is_assigned].copy()
+        
         # Compute centroids
         assigned['centroid'] = assigned.geometry.centroid
         unassigned['centroid'] = unassigned.geometry.centroid
@@ -154,7 +155,6 @@ class GeocellCreator:
         for poly, target_id in zip(unassigned.geometry, target_cell_ids):
             if target_id in cell_map:
                 cell_map[target_id].add_polygons([poly])
-
 
 if __name__ == '__main__':
     df = pd.read_csv(LOC_PATH)
