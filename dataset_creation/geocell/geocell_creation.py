@@ -19,7 +19,8 @@ ADMIN_NAMES = ['gid_0', 'gid_1', 'gid_2']
 
 class GeocellCreator:
     def __init__(self, df: pd.DataFrame, output_file: str) -> None:
-        """Creates geocells based on a supplied dataframe.
+        """
+        Creates geocells based on a supplied dataframe.
 
         Args:
             df (pd.DataFrame): Pandas dataframe used during training.
@@ -28,9 +29,8 @@ class GeocellCreator:
 
         self.output = output_file
         self.cells = None
-        self.gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.lon, df.lat))
+        self.gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.lon, df.lat), crs=CRS)
         
-
     def generate(self, min_cell_size: int=MIN_CELL_SIZE, max_cell_size: int=MAX_CELL_SIZE):
         """Generate geocells.
 
@@ -44,60 +44,63 @@ class GeocellCreator:
             warnings.simplefilter('ignore')
             self.cells = self._initialize_cells(min_cell_size)
             self.cells.balance(min_cell_size, max_cell_size)
-            self.geo_cell_df = self.cells.to_pandas()
-            self.geo_cell_df.to_csv(self.output, index=False)
+            self.geocell_df = self.cells.to_pandas()
+            self.geocell_df.to_csv(self.output, index=False)
 
         return self.cells
 
     def _initialize_cells(self, min_cell_size: int) -> CellCollection:
-        """Assigns IDs to each location in the dataset based on geographic boundaries.
+        """
+        Assigns IDs to each location in the dataset based on geographic boundaries.
 
         Args:
             min_cell_size (int): Suggested minimum cell size.
 
         Returns:
             CellCollection: Initial geocells on admin 2 hierarchy level.
-
-        Note: This helper function is created such that the boundaries, which are huge
-            files, can go out of scope as quickly as possible to free up memory.
         """
-
         admin_2 = self._load_granular_boundaries()
 
-        # Initialize all geocells
-        initialize_cell_fnc = functools.partial(self.__initialize_cell, admin_2)
-        tqdm.pandas(desc='INITIALIZING ADMIN 2 GEOCELLS')
-        cells = self.gdf.groupby(ADMIN_NAMES[2]).progress_apply(initialize_cell_fnc)
-        cells = [item for sublist in cells for item in sublist]
+        # Build a quick lookup dictionary from admin_2_boundary
+        # NOTE: Not sure if the {gid_value: geometry} pairs actually match up. 
+        # Make sure to double-check this soon.
+        admin_2_lookup = admin_2.geometry.to_dict()
 
-        # Add unassigned areas to cells
+        # Initialize geocells by group
+        print("INITIALIZING ADMIN 2 CELLS")
+        cells = [
+            self.__initialize_cell(group, admin_2_lookup)
+            for _, group in self.gdf.groupby(ADMIN_NAMES[2])
+        ]
+
         self._assign_unassigned_areas(cells, admin_2)
         return CellCollection(cells)
-    
-    def __initialize_cell(self, admin_2_boundary: gpd.GeoDataFrame, gdf: gpd.GeoDataFrame) -> Cell:
-        """Initializes a geocell based on an admin 2 boundary level.
+
+
+    def __initialize_cell(self, gdf: gpd.GeoDataFrame, admin_2_lookup: dict) -> Cell:
+        """
+        Initializes a geocell based on an admin 2 boundary level.
 
         Args:
-            admin_2_boundary (gpd.GeoDataFrame): file containing admin 2 polygons.
-            min_cell_size (int): suggested minimum cell size.
-            df (gpd.GeoDataFrame): Dataframe containing all coordinates of a given
-                admin 2 level.
+            gdf (gpd.GeoDataFrame): Coordinates for a given admin 2 unit.
+            admin_2_lookup (dict): Maps admin_2 names to geometries.
 
         Returns:
-            Cell: Geocell.
+            Cell: A single geocell.
         """
-        
-        # Get metadata
-        name = gdf.iloc[0][ADMIN_NAMES[2]]
-        admin_1 = gdf.iloc[0][ADMIN_NAMES[1]]
-        country = gdf.iloc[0][ADMIN_NAMES[0]]
 
-        # Get shapes
-        polygon_ids = np.array([int(x) for x in gdf[ADMIN_NAMES[2]].unique()])
-        points = gdf['geometry'].values.tolist()
-        polygons = admin_2_boundary.iloc[polygon_ids].geometry.unique().tolist()
+        # Extract metadata from the first row
+        row = gdf.iloc[0]
+        name, admin_1, country = row[ADMIN_NAMES[2]], row[ADMIN_NAMES[1]], row[ADMIN_NAMES[0]]
 
-        return [Cell(name, admin_1, country, points, polygons)]
+        # Get point geometries
+        points = gdf.geometry.tolist()
+
+        # Get polygon geometry from lookup
+        polygon = admin_2_lookup.get(name)
+        polygons = [polygon] if polygon is not None else []
+
+        return Cell(name, admin_1, country, points, polygons)
 
     def _load_granular_boundaries(self):
         """Loads geographic boundaries at the admin 2 level."""
@@ -119,26 +122,38 @@ class GeocellCreator:
             cells (List[Cell]): Existing geocells.
             admin_2 (gpd.GeoDataFrame): Admin 2 boundary GeoDataFrame.
         """
-        # Determined assigned and unassigned polygons
+
+        # Build quick access to cell objects
         cell_map = {int(cell.cell_id): cell for cell in cells}
-        cell_idx = list(cell_map.keys())
+        assigned_idx = set(cell_map.keys())
 
-        assigned = admin_2.loc[admin_2.index.isin(cell_idx)].copy().reset_index()
-        assigned['centroid'] = [row.geometry.centroid for _, row in assigned.iterrows()]
-        assigned = gpd.GeoDataFrame(assigned, geometry='centroid')
+        # Identify assigned and unassigned polygons
+        is_assigned = admin_2.index.isin(assigned_idx)
+        if is_assigned.all():
+            return  # Nothing to do — all polygons are assigned
 
-        unassigned = admin_2.loc[admin_2.index.isin(cell_idx) == False].reset_index(drop=True)
-        unassigned['centroid'] = [row.geometry.centroid for _, row in unassigned.iterrows()]
-        unassigned = gpd.GeoDataFrame(unassigned, geometry='centroid')
+        assigned = admin_2.loc[is_assigned].copy()
+        unassigned = admin_2.loc[~is_assigned].copy()
 
-        # Find assignments
-        closest_match = assigned.sindex.nearest(unassigned.centroid)[1]
-        assignments = assigned.iloc[closest_match]['index'].values
+        # Compute centroids
+        assigned['centroid'] = assigned.geometry.centroid
+        unassigned['centroid'] = unassigned.geometry.centroid
 
-        # Add polygons to closest cells
-        for i, row in unassigned.iterrows():
-            closest_cell = assignments[i]
-            cell_map[closest_cell].add_polygons([row['geometry']])
+        # Use spatial index to find nearest assigned centroid for each unassigned one
+        assigned_centroids = assigned.set_geometry('centroid')
+        unassigned_centroids = unassigned.set_geometry('centroid')
+
+        # Efficient nearest neighbor lookup using GeoPandas spatial index
+        _, nearest_idx = assigned_centroids.sindex.nearest(unassigned_centroids.geometry, return_distance=False)
+
+        # Get back original admin_2 indices from assigned
+        assigned_original_idx = assigned.index.to_numpy()
+        target_cell_ids = assigned_original_idx[nearest_idx]  # Map to actual cell IDs
+
+        # Add unassigned polygons to their nearest assigned cells
+        for poly, target_id in zip(unassigned.geometry, target_cell_ids):
+            if target_id in cell_map:
+                cell_map[target_id].add_polygons([poly])
 
 
 if __name__ == '__main__':

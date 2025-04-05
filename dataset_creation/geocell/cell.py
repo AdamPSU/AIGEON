@@ -24,10 +24,11 @@ class Cell:
         Args:
             cell_id (str): name
             admin_1 (str): name of Admin 1 area
-            country (str): name of country
+            admin_0 (str): name of country
             points (List[Point]): collection of coordinates
             polygons (List[Polygon]): collection of polygons
         """
+
         self.cell_id = str(cell_id)
         self.admin_1 = str(admin_1)
         self.country = str(country)
