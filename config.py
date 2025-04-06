@@ -7,11 +7,11 @@ ADMIN_2_PATH = 'data/geocells/admin_data/adm_2.gpkg'
 GEOCELL_PATH = 'data/geocells/cells/geocells.csv' 
 LOC_PATH = 'data/training/locations/locations.csv'
 
-CRS = 'EPSG:4326'
+CRS = 'EPSG:4087'
 
 # Geocell creation
-MIN_CELL_SIZE = 1000 
-MAX_CELL_SIZE = 2000 
+MIN_CELL_SIZE = 100
+MAX_CELL_SIZE = 500 
 
 # Haversine smoothing constant
 LABEL_SMOOTHING_CONSTANT = 65 
