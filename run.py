@@ -26,9 +26,8 @@ def main():
     # Load from S3 or local
     df = pd.read_csv(args.locations_path)
 
-    geocell_creator = GeocellCreator(df, 'data/geocells/cells/inat2017_cells.csv')
-    granular_boundaries = geocell_creator._load_granular_boundaries(args.admin2_path)
-    cells = geocell_creator.initialize_cells(granular_boundaries, args.min_cell_size)
+    geocell_creator = GeocellCreator(df, args.admin2_path, '')
+    cells = geocell_creator.initialize_cells(args.min_cell_size)
     cells = parallelize_fusing(cells, num_workers=args.num_workers)
     cells.save(args.fused_geocell_path)    
 
