@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 import geopandas as gpd
-import logging 
+import s3fs 
 
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 from typing import Tuple, List
@@ -11,8 +11,6 @@ from tqdm import tqdm
 from .cell import Cell
 from .cell_collection import CellCollection
 from config import LOC_PATH, MIN_CELL_SIZE, MAX_CELL_SIZE, CRS
-
-ADMIN_2_PATH = 's3://animaldex/admin_data/adm_2.gpkg'
 
 # Constants
 NEEDED_COLS = {'id', 'country_code', 'lat', 'lon'}
@@ -36,7 +34,7 @@ class GeocellCreator:
         self.gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.lon, df.lat), crs='EPSG:4326')
         self.gdf.to_crs(crs=CRS)
 
-    def initialize_cells(self, min_cell_size: int) -> CellCollection:
+    def initialize_cells(self, granular_boundaries, min_cell_size: int) -> CellCollection:
         """
         Assigns IDs to each location in the dataset based on geographic boundaries.
 
@@ -47,7 +45,7 @@ class GeocellCreator:
             CellCollection: Initial geocells on admin 2 hierarchy level.
         """
 
-        admin_2 = self._load_granular_boundaries()
+        admin_2 = granular_boundaries
 
         # Build a quick lookup dictionary from admin_2_boundary
         # NOTE: Not sure if the {gid_value: geometry} pairs actually match up. 
@@ -64,6 +62,23 @@ class GeocellCreator:
 
         return CellCollection(cells)
 
+    def load_granular_boundaries(self, admin_2_path):
+        """Loads geographic boundaries at the admin 2 level."""
+        
+        # Load smaller administrative areas
+        if admin_2_path.startswith("s3://"):
+            fs = s3fs.S3FileSystem()
+            with fs.open(admin_2_path, 'rb') as f:
+                admin_2 = gpd.read_file(f)
+        else:
+            admin_2 = gpd.read_file(admin_2_path).to_crs(crs=CRS)
+
+        admin_2['geometry'] = admin_2['geometry'].buffer(0)
+        
+        print('Loaded admin 2 geometries.')
+
+        return admin_2
+    
     def _load_granular_cells(self, gdf: gpd.GeoDataFrame, admin_2_lookup: dict) -> Cell:
         """
         Initializes a geocell based on an admin 2 boundary level.
@@ -88,17 +103,6 @@ class GeocellCreator:
         polygons = [polygon] if polygon is not None else []
 
         return Cell(admin_2, admin_1, admin_0, points, polygons)
-
-    def _load_granular_boundaries(self):
-        """Loads geographic boundaries at the admin 2 level."""
-
-        # Load smaller administrative areas
-        admin_2 = gpd.read_file(ADMIN_2_PATH).to_crs(crs=CRS)
-        admin_2['geometry'] = admin_2['geometry'].buffer(0)
-        
-        print('Loaded admin 2 geometries.')
-
-        return admin_2
 
     def _assign_unassigned_areas(self, cells: List[Cell], admin_2: gpd.GeoDataFrame):
         """Adds unassigned admin 2 areas to the existing cells.
