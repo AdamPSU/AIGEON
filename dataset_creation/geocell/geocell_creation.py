@@ -1,4 +1,5 @@
 # FILE STARTS HERE
+import warnings; warnings.filterwarnings("ignore", message=".*has GPKG application_id, but non conformant file extension.*")
 import numpy as np
 import pandas as pd
 import geopandas as gpd
@@ -53,29 +54,28 @@ class GeocellCreator:
         admin_2_lookup = admin_2.geometry.to_dict()
 
         # Initialize geocells by group
+        print("Loading admin 2 cells...")
         cells = [
             self._load_granular_cells(group, admin_2_lookup)
             for _, group in self.gdf.groupby(ADMIN_NAMES[2])
         ]
         self._assign_unassigned_areas(cells, admin_2)
-        print("Loaded admin 2 cells.")
 
         return CellCollection(cells)
 
     def load_granular_boundaries(self, admin_2_path):
         """Loads geographic boundaries at the admin 2 level."""
         
+        print('Loading admin 2 geometries...')
         # Load smaller administrative areas
         if admin_2_path.startswith("s3://"):
             fs = s3fs.S3FileSystem()
             with fs.open(admin_2_path, 'rb') as f:
-                admin_2 = gpd.read_file(f)
+                admin_2 = gpd.read_file(f).to_crs(crs=CRS)
         else:
             admin_2 = gpd.read_file(admin_2_path).to_crs(crs=CRS)
 
         admin_2['geometry'] = admin_2['geometry'].buffer(0)
-        
-        print('Loaded admin 2 geometries.')
 
         return admin_2
     
