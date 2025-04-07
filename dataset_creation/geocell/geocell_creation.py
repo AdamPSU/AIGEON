@@ -10,9 +10,9 @@ from tqdm import tqdm
 
 from .cell import Cell
 from .cell_collection import CellCollection
-from config import ADMIN_2_PATH, LOC_PATH, MIN_CELL_SIZE, MAX_CELL_SIZE, CRS
+from config import LOC_PATH, MIN_CELL_SIZE, MAX_CELL_SIZE, CRS
 
-logger = logging.getLogger(__name__)
+ADMIN_2_PATH = 's3://animaldex/admin_data/adm_2.gpkg'
 
 # Constants
 NEEDED_COLS = {'id', 'country_code', 'lat', 'lon'}
