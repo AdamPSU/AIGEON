@@ -147,13 +147,13 @@ def parallelize_fusing(granular_cells: CellCollection, num_workers):
             cell for cell in granular_cells
             if cell.admin_0 == country
         ])
-        for country in granular_cells.countries
+        for country in tqdm(granular_cells.countries, desc="Dividing into countries")
     ]
-
-    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+    
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
         futures = [executor.submit(fuse_cells, group) for group in grouped_country_cells]
 
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Fusing countries"):
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Fusing admin 2 cells within countries."):
             result = future.result()  # Raises if an exception occurred in worker
             all_cells.extend(result)
 
