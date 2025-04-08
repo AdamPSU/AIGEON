@@ -115,56 +115,6 @@ class CellCollection(set):
 
         return cls(set(np.load(file, allow_pickle=True)))
 
-    def balance(self, min_cell_size: int, max_cell_size: int):
-        """Balances all contained cells such that most cells are not smaller than min_cell_size.
-
-        Args:
-            min_cell_size: (int): Minimum cell size.
-            max_cell_size (int): Minimum cell size.
-        """
-        countries = self.countries[::-1]
-
-        self._split_geocells(min_cell_size, max_cell_size)
-        self.save('data/geocells/cells/inat2017_gcell_collection.npy')
-
-    def _split_geocells(self, min_cell_size: int, max_cell_size: int):
-        """Split large geocells into cells smaller or equal to max_cell_size.
-
-        Args:
-            min_cell_size: (int): Minimum cell size.
-            max_cell_size (int): Maximum cell size.
-        """
-
-        for args in OPTIC_PARAMS:
-            print('||| NEW OPTICS PARAMS ||| ', args)
-            new_cells = []
-
-            large_cells = [x for x in self if x.size > max_cell_size]
-            round = 1
-            while len(large_cells) > 0:
-
-                # Progress bar
-                desc = f'Round {round}: splitting large cells'
-                pbar = tqdm(total=len(large_cells), desc=desc, dynamic_ncols=True, unit='cell')
-
-                # Parallalize the splitting of cells across cores
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    futures = [executor.submit(cell._split_cell, self, args, min_cell_size, max_cell_size) for cell in large_cells]
-                    for future in concurrent.futures.as_completed(futures):
-                        nc = future.result()
-                        new_cells.extend(nc)
-                        pbar.update(1)
-
-                    concurrent.futures.wait(futures)
-
-                # Update variables
-                large_cells = new_cells
-                new_cells = []
-                round += 1
-
-                # Close the progress bar
-                pbar.close()
-
     def __sub__(self, other):
         return CellCollection(super().__sub__(other))
     

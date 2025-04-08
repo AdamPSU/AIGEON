@@ -6,7 +6,7 @@ import geopandas as gpd
 from shapely.geometry import Point, Polygon, MultiPoint, MultiPolygon
 from shapely.errors import TopologicalError
 from typing import List, Any, Tuple
-# from sklearn.cluster import OPTICS
+from sklearn.cluster import OPTICS
 from scipy.spatial import Voronoi
 from .voronoi import voronoi_finite_polygons
 
@@ -333,152 +333,152 @@ class Cell:
 
             return new_cells, [self]
 
-    # def _split_cell(self, add_to: Any, cluster_args: Tuple[float], min_cell_size: int,
-    #                 max_cell_size: int) -> List[Any]:
-    #     """Splits a cell into two. 
+    def _split_cell(self, add_to: Any, cluster_args: Tuple[float], min_cell_size: int,
+                    max_cell_size: int) -> List[Any]:
+        """Splits a cell into two. 
 
-    #     Args:
-    #         add_to (Any): CellCollection to add new geocells to.
-    #         cluster_args (Tuple[float]): OPTICS clusterer arguments.
-    #         min_cell_size (int): Minimum size of a cell.
-    #         max_cell_size (int): Maximum size of a cell.
+        Args:
+            add_to (Any): CellCollection to add new geocells to.
+            cluster_args (Tuple[float]): OPTICS clusterer arguments.
+            min_cell_size (int): Minimum size of a cell.
+            max_cell_size (int): Maximum size of a cell.
 
-    #     Returns:
-    #         List[Cell]: new cells which need processing.
-    #     """
-    #     # Don't need to cluster small cells
-    #     if self.size < max_cell_size:
-    #         return []
+        Returns:
+            List[Cell]: new cells which need processing.
+        """
+        # Don't need to cluster small cells
+        if self.size < max_cell_size:
+            return []
 
-    #     # Get dataframe
-    #     df = pd.DataFrame(data=self.coords, columns=['lon', 'lat'])
-    #     df = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.lon, df.lat), crs=CRS)
+        # Get dataframe
+        df = pd.DataFrame(data=self.coords, columns=['lon', 'lat'])
+        df = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.lon, df.lat), crs=CRS)
 
-    #     # Cluster
-    #     clusterer = OPTICS(min_samples=cluster_args[0], xi=cluster_args[1])
-    #     df['cluster'] = clusterer.fit_predict(df[['lon', 'lat']].values)
+        # Cluster
+        clusterer = OPTICS(min_samples=cluster_args[0], xi=cluster_args[1])
+        df['cluster'] = clusterer.fit_predict(df[['lon', 'lat']].values)
         
-    #     # No clusters found
-    #     unique_clusters = df['cluster'].nunique()
-    #     if unique_clusters < 2:
-    #         return []
+        # No clusters found
+        unique_clusters = df['cluster'].nunique()
+        if unique_clusters < 2:
+            return []
 
-    #     # Erase small clusters
-    #     cluster_counts = df['cluster'].value_counts()
-    #     small_clusters = cluster_counts[cluster_counts < min_cell_size].index.tolist()
-    #     df.loc[df['cluster'].isin(small_clusters), 'cluster'] = -1
+        # Erase small clusters
+        cluster_counts = df['cluster'].value_counts()
+        small_clusters = cluster_counts[cluster_counts < min_cell_size].index.tolist()
+        df.loc[df['cluster'].isin(small_clusters), 'cluster'] = -1
 
-    #     # Count clusters
-    #     cluster_counts = df['cluster'].value_counts()
-    #     large_clusters = cluster_counts[cluster_counts >= min_cell_size].index
-    #     non_null_large_clusters = [x for x in large_clusters if x != -1]
+        # Count clusters
+        cluster_counts = df['cluster'].value_counts()
+        large_clusters = cluster_counts[cluster_counts >= min_cell_size].index
+        non_null_large_clusters = [x for x in large_clusters if x != -1]
 
-    #     # Return if not at least two large clusters
-    #     if len(large_clusters) < 2:
-    #         return []
+        # Return if not at least two large clusters
+        if len(large_clusters) < 2:
+            return []
 
-    #     # Dougnut extraction possible
-    #     if len(large_clusters) == 2 and len(non_null_large_clusters) == 1:
-    #         null_df = df[df['cluster'] == -1]
-    #         if len(null_df) > max_cell_size:
-    #             return []
+        # Dougnut extraction possible
+        if len(large_clusters) == 2 and len(non_null_large_clusters) == 1:
+            null_df = df[df['cluster'] == -1]
+            if len(null_df) > max_cell_size:
+                return []
 
-    #         # Separate a single cluster
-    #         new_cells, remove_cells = self._separate_single_cluster(df, non_null_large_clusters[0])
+            # Separate a single cluster
+            new_cells, remove_cells = self._separate_single_cluster(df, non_null_large_clusters[0])
 
-    #     # At least 2 assigned large clusters exist
-    #     else:
-    #         new_cells, remove_cells = self._separate_multi_cluster(df, non_null_large_clusters)
+        # At least 2 assigned large clusters exist
+        else:
+            new_cells, remove_cells = self._separate_multi_cluster(df, non_null_large_clusters)
 
-    #     # Detach new cells
-    #     for new_cell in new_cells:
-    #         self.subtract(new_cell)
-    #         add_to.add(new_cell)
+        # Detach new cells
+        for new_cell in new_cells:
+            self.subtract(new_cell)
+            add_to.add(new_cell)
 
-    #     # Remove cells as needed
-    #     for cell in remove_cells:
-    #         add_to.remove(cell)
+        # Remove cells as needed
+        for cell in remove_cells:
+            add_to.remove(cell)
 
-    #     # Clean dirty splits
-    #     clean_cells = new_cells
-    #     if len(remove_cells) == 0:
-    #         clean_cells += [self]
+        # Clean dirty splits
+        clean_cells = new_cells
+        if len(remove_cells) == 0:
+            clean_cells += [self]
 
-    #     self.__clean_dirty_splits(clean_cells)
+        self.__clean_dirty_splits(clean_cells)
 
-    #     # Look at what cells need further processing
-    #     proc_cells = []
-    #     if self.size > max_cell_size and self not in remove_cells:
-    #         proc_cells.append(self)
+        # Look at what cells need further processing
+        proc_cells = []
+        if self.size > max_cell_size and self not in remove_cells:
+            proc_cells.append(self)
 
-    #     for cell in new_cells:
-    #         if cell.size > max_cell_size:
-    #             proc_cells.append(cell)
+        for cell in new_cells:
+            if cell.size > max_cell_size:
+                proc_cells.append(cell)
 
-    #     return proc_cells
+        return proc_cells
 
-    # def __clean_dirty_splits(self, cells: List[Any]):
-    #     """Cleans messy splits that split polygons into multiple parts.
-    #     """
-    #     df = pd.DataFrame(data=[x.tolist() for x in cells], columns=GEOCELL_COLUMNS)
-    #     df = gpd.GeoDataFrame(df, geometry='geometry', crs=CRS)
+    def __clean_dirty_splits(self, cells: List[Any]):
+        """Cleans messy splits that split polygons into multiple parts.
+        """
+        df = pd.DataFrame(data=[x.tolist() for x in cells], columns=GEOCELL_COLUMNS)
+        df = gpd.GeoDataFrame(df, geometry='geometry', crs=CRS)
 
-    #     # Identifying Multipolygons
-    #     multi_polys = df[df['geometry'].type == 'MultiPolygon']
+        # Identifying Multipolygons
+        multi_polys = df[df['geometry'].type == 'MultiPolygon']
 
-    #     # Iterate through rows with Multipolygons
-    #     for index, row in multi_polys.iterrows():
+        # Iterate through rows with Multipolygons
+        for index, row in multi_polys.iterrows():
 
-    #         # Find points
-    #         points = cells[index].to_pandas()['geometry'] # .to_crs('EPSG:3857')
+            # Find points
+            points = cells[index].to_pandas()['geometry'] # .to_crs('EPSG:3857')
             
-    #         # Splitting Multipolygons
-    #         all_polygons = list(row['geometry'].geoms)
+            # Splitting Multipolygons
+            all_polygons = list(row['geometry'].geoms)
             
-    #         # Finding the Largest Sub-Polygon
-    #         largest_poly = max(all_polygons, key=lambda polygon: polygon.area)
+            # Finding the Largest Sub-Polygon
+            largest_poly = max(all_polygons, key=lambda polygon: polygon.area)
             
-    #         # Flag
-    #         did_assign = False
+            # Flag
+            did_assign = False
             
-    #         # Assigning Smaller Polygons
-    #         for small_poly in all_polygons:
-    #             if small_poly != largest_poly:
+            # Assigning Smaller Polygons
+            for small_poly in all_polygons:
+                if small_poly != largest_poly:
                     
-    #                 # Creating a GeoSeries with the same index and CRS as 'test'
-    #                 small_poly_gseries = gpd.GeoSeries([small_poly], index=[index], crs=CRS)
+                    # Creating a GeoSeries with the same index and CRS as 'test'
+                    small_poly_gseries = gpd.GeoSeries([small_poly], index=[index], crs=CRS)
                     
-    #                 # Exclude the original polygon during the intersection calculation
-    #                 other_polys = df.drop(index)
+                    # Exclude the original polygon during the intersection calculation
+                    other_polys = df.drop(index)
                     
-    #                 # Create a small buffer around the small polygon to account for mismatched borders
-    #                 buffered_poly = small_poly_gseries.buffer(0.01)
+                    # Create a small buffer around the small polygon to account for mismatched borders
+                    buffered_poly = small_poly_gseries.buffer(0.01)
                     
-    #                 # Identify polygons that intersect with the buffered small polygon
-    #                 intersecting_polys = other_polys[other_polys.intersects(buffered_poly.unary_union)]
+                    # Identify polygons that intersect with the buffered small polygon
+                    intersecting_polys = other_polys[other_polys.intersects(buffered_poly.unary_union)]
 
-    #                 if len(intersecting_polys) == 0:
-    #                     continue
+                    if len(intersecting_polys) == 0:
+                        continue
 
-    #                 did_assign = True
+                    did_assign = True
                     
-    #                 # Find the polygon that has the largest intersection area
-    #                 largest_intersect_index = intersecting_polys.geometry.apply(
-    #                     lambda poly: poly.intersection(buffered_poly.unary_union).area
-    #                 ).idxmax()
+                    # Find the polygon that has the largest intersection area
+                    largest_intersect_index = intersecting_polys.geometry.apply(
+                        lambda poly: poly.intersection(buffered_poly.unary_union).area
+                    ).idxmax()
 
-    #                 # Checking which points fall into 'small_poly'
-    #                 mask = points.within(small_poly)
-    #                 points_in_small_poly = points[mask]
-    #                 cells[index]._points = [x for x in cells[index].points if x not in points_in_small_poly]
-    #                 cells[largest_intersect_index].add_points(points_in_small_poly)
+                    # Checking which points fall into 'small_poly'
+                    mask = points.within(small_poly)
+                    points_in_small_poly = points[mask]
+                    cells[index]._points = [x for x in cells[index].points if x not in points_in_small_poly]
+                    cells[largest_intersect_index].add_points(points_in_small_poly)
                     
-    #                 # Union the small polygon with the polygon having largest common border
-    #                 cells[largest_intersect_index]._polygons = [cells[largest_intersect_index].shape.union(small_poly)]
+                    # Union the small polygon with the polygon having largest common border
+                    cells[largest_intersect_index]._polygons = [cells[largest_intersect_index].shape.union(small_poly)]
 
-    #         if did_assign:
-    #             # Keeping the largest polygon in the original GeoDataFrame
-    #             cells[index]._polygons = [largest_poly]
+            if did_assign:
+                # Keeping the largest polygon in the original GeoDataFrame
+                cells[index]._polygons = [largest_poly]
 
     def __eq__(self, other):
         return self.admin_2 == other.cell_id
