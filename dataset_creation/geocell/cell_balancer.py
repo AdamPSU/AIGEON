@@ -1,13 +1,13 @@
 import warnings; warnings.filterwarnings("ignore")
 import numpy as np
 
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed, wait
 from tqdm import tqdm
 
 from .cell_collection import CellCollection
 
 # Constants
-OPTIC_PARAMS = [(300, 0.05), (400, 0.005), (1000, 0.0001)]
+HDBSCAN_PARAMS = [100, 250, 500]
 
 def cell_fuser(granular_cells: CellCollection, min_cell_size: int, num_workers: int):
     all_cells = []
@@ -121,7 +121,7 @@ def cell_splitter(cells:CellCollection, min_cell_size: int, max_cell_size: int, 
         max_cell_size (int): Maximum cell size.
     """
 
-    for params in OPTIC_PARAMS:
+    for params in HDBSCAN_PARAMS:
         new_cells = []
 
         large_cells = [
@@ -132,11 +132,11 @@ def cell_splitter(cells:CellCollection, min_cell_size: int, max_cell_size: int, 
 
         while len(large_cells) > 0:
             # Progress bar
-            desc = f'Round {round} of plitting large cells, trying params = {params}'
+            desc = f'Round {round} of splitting large cells, trying min_sample_size = {params}'
             pbar = tqdm(total=len(large_cells), desc=desc, dynamic_ncols=True, unit='cell')
 
             # Parallelize the splitting of cells across cores
-            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
                 futures = [
                     executor.submit(cell._split_cell, cells, params, min_cell_size, max_cell_size) 
                     for cell in large_cells
@@ -146,6 +146,8 @@ def cell_splitter(cells:CellCollection, min_cell_size: int, max_cell_size: int, 
                     nc = future.result()
                     new_cells.extend(nc)
                     pbar.update(1)
+
+            wait(futures)
 
             # Update variables
             large_cells = new_cells

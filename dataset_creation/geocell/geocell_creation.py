@@ -6,7 +6,6 @@ import pandas as pd
 import geopandas as gpd
 import s3fs 
 
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Tuple, List
 from tqdm import tqdm
 
@@ -14,7 +13,7 @@ from .cell import Cell
 from .cell_collection import CellCollection
 from .cell_balancer import cell_fuser, cell_splitter 
 
-from config import LOC_PATH, ADMIN_2_PATH, MIN_CELL_SIZE, MAX_CELL_SIZE, CRS
+from config import LOC_PATH, MIN_CELL_SIZE, CRS
 
 # Constants
 NEEDED_COLS = {'id', 'country_code', 'lat', 'lon'}

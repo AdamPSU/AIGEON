@@ -6,7 +6,7 @@ import geopandas as gpd
 from shapely.geometry import Point, Polygon, MultiPoint, MultiPolygon
 from shapely.errors import TopologicalError
 from typing import List, Any, Tuple
-from sklearn.cluster import OPTICS
+from hdbscan import HDBSCAN
 from scipy.spatial import Voronoi
 from .voronoi import voronoi_finite_polygons
 
@@ -194,7 +194,7 @@ class Cell:
         """
         return [self.admin_2, self.admin_1, self.admin_0, len(self.points), len(self.polygons), self.shape]
 
-    def to_pandas(self) -> gpd.GeoDataFrame:
+    def to_geopandas(self) -> gpd.GeoDataFrame:
         """Converts a cell to a geopandas DataFrame.
 
         Returns:
@@ -333,7 +333,7 @@ class Cell:
 
             return new_cells, [self]
 
-    def _split_cell(self, add_to: Any, cluster_args: Tuple[float], min_cell_size: int,
+    def _split_cell(self, add_to: Any, min_samples: int, min_cell_size: int,
                     max_cell_size: int) -> List[Any]:
         """Splits a cell into two. 
 
@@ -354,10 +354,9 @@ class Cell:
         df = pd.DataFrame(data=self.coords, columns=['lon', 'lat'])
         df = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.lon, df.lat), crs=CRS)
 
-        # Cluster
-        clusterer = OPTICS(min_samples=cluster_args[0], xi=cluster_args[1])
+        clusterer = HDBSCAN(min_cluster_size=min_cell_size, min_samples=min_samples)
         df['cluster'] = clusterer.fit_predict(df[['lon', 'lat']].values)
-        
+
         # No clusters found
         unique_clusters = df['cluster'].nunique()
         if unique_clusters < 2:

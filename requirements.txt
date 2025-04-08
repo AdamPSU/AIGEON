@@ -4,12 +4,12 @@ pandas
 numpy
 matplotlib
 scikit-learn
+hdbscan
 torch 
+
 
 # Geospatial
 geopandas
-pygeos
-voronoi
 
 # Compute 
 s3fs
