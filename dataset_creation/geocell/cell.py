@@ -264,24 +264,26 @@ class Cell:
         return polys
 
     def _separate_single_cluster(self, df: pd.DataFrame, cluster: int=0) -> Tuple[List[Any]]:
-        """Separates a single cluster from a geocell.
-
-        Args:
-            df (pd.DataFrame): Dataframe of points.
-            cluster (int): Cluster to seperate out. Defaults to 0.
-
-        Returns:
-            Tuple[List[Any]]: New cells.
-        """
-
+        """Separates a single cluster from a geocell."""
         # Create polygon map
         polygons = self.voronoi_polygons()
 
-        # Separate out points
+        # Reindex df to match point order
+        df = df.reset_index(drop=True)  # Ensure index starts from 0
+        if len(df) != len(polygons):
+            raise ValueError(f"Length mismatch: {len(df)} points vs {len(polygons)} polygons in cell {self.admin_2}")
+
+        # Get only the points in the specified cluster
         cluster_df = df[df['cluster'] == cluster][['lon', 'lat']]
-        assert len(cluster_df.index) > 0, 'Dataframe does not contain a cluster'
-        cluster_points = [self.points[i] for i in cluster_df.index]
-        cluster_polys = [polygons[i] for i in cluster_df.index]
+        if cluster_df.empty:
+            raise ValueError(f'Dataframe does not contain cluster {cluster} in cell {self.admin_2}')
+
+        # Get positions of these rows (row numbers after reset)
+        cluster_indices = cluster_df.index.to_list()
+        
+        # Select points and polygons based on positional index
+        cluster_points = [self.points[i] for i in cluster_indices]
+        cluster_polys = [polygons[i] for i in cluster_indices]
 
         # Create new cell
         new_cell = self.__separate_points(cluster_points, cluster_polys, contain_points=True)
