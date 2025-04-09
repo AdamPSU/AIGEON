@@ -33,6 +33,51 @@ def cell_fuser(granular_cells: CellCollection, min_cell_size: int, num_workers: 
 
     return CellCollection(all_cells)  
 
+def cell_splitter(cells:CellCollection, min_cell_size: int, max_cell_size: int, num_workers: int):
+    """Split large geocells into cells smaller or equal to max_cell_size.
+
+    Args:
+        min_cell_size: (int): Minimum cell size.
+        max_cell_size (int): Maximum cell size.
+    """
+
+    for params in HDBSCAN_PARAMS:
+        new_cells = []
+
+        large_cells = [
+            cell for cell in cells 
+            if cell.size > max_cell_size
+        ]
+        round = 1
+
+        while len(large_cells) > 0:
+            # Progress bar
+            desc = f'Round {round} of splitting large cells, trying min_sample_size = {params}'
+            pbar = tqdm(total=len(large_cells), desc=desc, dynamic_ncols=True, unit='cell')
+
+            # Parallelize the splitting of cells across cores
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                futures = [
+                    executor.submit(cell._split_cell, cells, params, min_cell_size, max_cell_size) 
+                    for cell in large_cells
+                ]
+                
+                for future in as_completed(futures):
+                    nc = future.result()
+                    new_cells.extend(nc)
+                    pbar.update(1)
+
+            wait(futures)
+
+            # Update variables
+            large_cells = new_cells
+            new_cells = []
+            round += 1
+
+            pbar.close()
+
+        return cells
+    
 def _get_candidates(center_row, potential_df, min_cell_size, admin_filter=True, small_filter=False):
     candidates = potential_df
     if admin_filter:
@@ -112,48 +157,3 @@ def _fuse_within_country(cells: CellCollection, min_cell_size: int) -> CellColle
             excluded_ids.add(center_id)
 
     return list(cells)
-
-def cell_splitter(cells:CellCollection, min_cell_size: int, max_cell_size: int, num_workers: int):
-    """Split large geocells into cells smaller or equal to max_cell_size.
-
-    Args:
-        min_cell_size: (int): Minimum cell size.
-        max_cell_size (int): Maximum cell size.
-    """
-
-    for params in HDBSCAN_PARAMS:
-        new_cells = []
-
-        large_cells = [
-            cell for cell in cells 
-            if cell.size > max_cell_size
-        ]
-        round = 1
-
-        while len(large_cells) > 0:
-            # Progress bar
-            desc = f'Round {round} of splitting large cells, trying min_sample_size = {params}'
-            pbar = tqdm(total=len(large_cells), desc=desc, dynamic_ncols=True, unit='cell')
-
-            # Parallelize the splitting of cells across cores
-            with ThreadPoolExecutor(max_workers=num_workers) as executor:
-                futures = [
-                    executor.submit(cell._split_cell, cells, params, min_cell_size, max_cell_size) 
-                    for cell in large_cells
-                ]
-                
-                for future in as_completed(futures):
-                    nc = future.result()
-                    new_cells.extend(nc)
-                    pbar.update(1)
-
-            wait(futures)
-
-            # Update variables
-            large_cells = new_cells
-            new_cells = []
-            round += 1
-
-            pbar.close()
-
-        return cells

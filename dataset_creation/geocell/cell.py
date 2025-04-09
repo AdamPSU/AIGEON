@@ -56,8 +56,12 @@ class Cell:
             Polygon: geocell shape
         """
         union = shapely.ops.unary_union(self.polygons)
-        union = union.buffer(0)
+        if not union.is_valid:
+            print(f"[WARNING] Invalid geometry in unary_union for cell: {self.admin_2}")
+        
+        union = union.buffer(0)  # Buffer(0) fixes many invalid geometries
         return union
+
 
     @property
     def points(self) -> List[Point]:
@@ -128,28 +132,21 @@ class Cell:
         return len(self.points) == 0
 
     def subtract(self, other: Any):
-        """Subtracts other cell from current cell.
-
-        Args:
-            other (Any): other cell
-        """
+        """Subtracts other cell from current cell."""
         try:
             diff_shape = self.shape.difference(other.shape)
-            
+            if not diff_shape.is_valid:
+                print(f"[WARNING] Invalid geometry during difference in cell: {self.admin_2}")
         except TopologicalError as e:
-            print(f'Error occurred during subtracting in cell: {self.admin_2}')
+            print(f"[ERROR] TopologicalError in subtract: {self.admin_2}")
             raise TopologicalError(e)
-        
+
         self._polygons = [diff_shape.buffer(0)]
 
-        # Convert Point objects to tuples
+        # Update points
         A_tuples = {(point.x, point.y) for point in self.points}
         B_tuples = {(point.x, point.y) for point in other.points}
-
-        # Find tuples in A that are not in B
         difference_tuples = A_tuples - B_tuples
-
-        # Convert tuples back to Point objects if needed
         self._points = [x for x in self.points if (x.x, x.y) in difference_tuples]
 
     def combine(self, others: List):
@@ -231,46 +228,40 @@ class Cell:
         return new_cell
 
     def voronoi_polygons(self, coords: np.ndarray=None) -> List[Polygon]:
-        """Generates voronoi shapes that fill out the cell shape.
-
-        Args:
-            coords (np.ndarray): Coordinates to be tesselated.
-                Defaults to None.
-
-        Returns:
-            List[Polygon]: List of polygons.
-
-        Note:
-            If coords is none, cell's own points will be tesselated.
-        """
-        # Get Voronoi Regions
+        """Generates Voronoi shapes that fill out the cell shape."""
         if coords is None:
             v_coords = np.unique(self.coords, axis=0)
         else:
             v_coords = np.unique(coords, axis=0)
 
-        vor = Voronoi(v_coords)
-        regions, vertices = voronoi_finite_polygons(vor)
-        
-        # Create Polygons
+        if len(v_coords) < 3:
+            print(f"[ERROR] Voronoi failed: insufficient points in cell {self.admin_2}")
+            return []
+
+        try:
+            vor = Voronoi(v_coords)
+            regions, vertices = voronoi_finite_polygons(vor)
+        except Exception as e:
+            print(f"[ERROR] Voronoi generation failed for {self.admin_2}: {e}")
+            return []
+
         polys = []
         for region in regions:
-            polygon = Polygon(vertices[region])
-            polys.append(polygon)
-        
-        # Intersect with original cell shape
+            try:
+                polygon = Polygon(vertices[region])
+                if not polygon.is_valid:
+                    print(f"[WARNING] Invalid Voronoi polygon in {self.admin_2}")
+                polys.append(polygon)
+            except Exception as e:
+                print(f"[ERROR] Failed to create polygon in cell {self.admin_2}: {e}")
+
         try:
             polys = [x.intersection(self.shape) for x in polys]
         except TopologicalError as e:
-            print(f'Error occurred in cell: {self.admin_2}')
+            print(f"[ERROR] TopologicalError during intersection in {self.admin_2}")
             raise TopologicalError(e)
 
-        # Return area belonging to each Point
-        df = pd.DataFrame({'geometry': polys})
-        df = gpd.GeoDataFrame(df, geometry='geometry')
-        points = [Point(p[0], p[1]) for p in coords] if coords is not None else self.points
-        indices = df.sindex.nearest(points, return_all=False)[1]
-        return [polys[i] for i in indices]
+        return polys
 
     def _separate_single_cluster(self, df: pd.DataFrame, cluster: int=0) -> Tuple[List[Any]]:
         """Separates a single cluster from a geocell.
@@ -335,77 +326,58 @@ class Cell:
 
     def _split_cell(self, add_to: Any, min_samples: int, min_cell_size: int,
                     max_cell_size: int) -> List[Any]:
-        """Splits a cell into two. 
-
-        Args:
-            add_to (Any): CellCollection to add new geocells to.
-            cluster_args (Tuple[float]): OPTICS clusterer arguments.
-            min_cell_size (int): Minimum size of a cell.
-            max_cell_size (int): Maximum size of a cell.
-
-        Returns:
-            List[Cell]: new cells which need processing.
-        """
-        # Don't need to cluster small cells
+        """Splits a cell into two."""
         if self.size < max_cell_size:
             return []
 
-        # Get dataframe
         df = pd.DataFrame(data=self.coords, columns=['lon', 'lat'])
         df = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.lon, df.lat), crs=CRS)
 
-        clusterer = HDBSCAN(min_cluster_size=min_cell_size, min_samples=min_samples)
-        df['cluster'] = clusterer.fit_predict(df[['lon', 'lat']].values)
-
-        unique_clusters = df['cluster'].nunique()
-        # No clusters found
-        if unique_clusters < 2:
+        try:
+            clusterer = HDBSCAN(min_cluster_size=min_cell_size, min_samples=min_samples)
+            df['cluster'] = clusterer.fit_predict(df[['lon', 'lat']].values)
+        except Exception as e:
+            print(f"[ERROR] HDBSCAN clustering failed in {self.admin_2}: {e}")
             return []
 
-        # Erase small clusters
+        unique_clusters = df['cluster'].nunique()
+        if unique_clusters < 2:
+            print(f"[INFO] No meaningful clusters found in {self.admin_2}")
+            return []
+
         cluster_counts = df['cluster'].value_counts()
         small_clusters = cluster_counts[cluster_counts < min_cell_size].index.tolist()
         df.loc[df['cluster'].isin(small_clusters), 'cluster'] = -1
 
-        # Count clusters
         cluster_counts = df['cluster'].value_counts()
         large_clusters = cluster_counts[cluster_counts >= min_cell_size].index
         non_null_large_clusters = [x for x in large_clusters if x != -1]
 
-        # Return if not at least two large clusters
         if len(large_clusters) < 2:
             return []
 
-        # Dougnut extraction possible
         if len(large_clusters) == 2 and len(non_null_large_clusters) == 1:
             null_df = df[df['cluster'] == -1]
             if len(null_df) > max_cell_size:
                 return []
 
-            # Separate a single cluster
             new_cells, remove_cells = self._separate_single_cluster(df, non_null_large_clusters[0])
-
-        # At least 2 assigned large clusters exist
         else:
             new_cells, remove_cells = self._separate_multi_cluster(df, non_null_large_clusters)
 
-        # Detach new cells
         for new_cell in new_cells:
             self.subtract(new_cell)
             add_to.add(new_cell)
 
-        # Remove cells as needed
         for cell in remove_cells:
             add_to.discard(cell)
 
-        # Clean dirty splits
         clean_cells = new_cells
         if len(remove_cells) == 0:
             clean_cells += [self]
 
         self.__clean_dirty_splits(clean_cells)
 
-        # Look at what cells need further processing
         proc_cells = []
         if self.size > max_cell_size and self not in remove_cells:
             proc_cells.append(self)
