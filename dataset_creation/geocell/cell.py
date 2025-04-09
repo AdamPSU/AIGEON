@@ -357,8 +357,8 @@ class Cell:
         clusterer = HDBSCAN(min_cluster_size=min_cell_size, min_samples=min_samples)
         df['cluster'] = clusterer.fit_predict(df[['lon', 'lat']].values)
 
-        # No clusters found
         unique_clusters = df['cluster'].nunique()
+        # No clusters found
         if unique_clusters < 2:
             return []
 
@@ -396,7 +396,7 @@ class Cell:
 
         # Remove cells as needed
         for cell in remove_cells:
-            add_to.remove(cell)
+            add_to.discard(cell)
 
         # Clean dirty splits
         clean_cells = new_cells
@@ -429,7 +429,7 @@ class Cell:
         for index, row in multi_polys.iterrows():
 
             # Find points
-            points = cells[index].to_pandas()['geometry'] # .to_crs('EPSG:3857')
+            points = cells[index].to_geopandas()['geometry'] # .to_crs('EPSG:3857')
             
             # Splitting Multipolygons
             all_polygons = list(row['geometry'].geoms)
@@ -480,10 +480,10 @@ class Cell:
                 cells[index]._polygons = [largest_poly]
 
     def __eq__(self, other):
-        return self.admin_2 == other.cell_id
+        return self.admin_2 == other.admin_2
     
     def __ne__(self, other):
-        return self.admin_2 != other.cell_id
+        return self.admin_2 != other.admin_2
 
     def __hash__(self):
         return hash(self.admin_2)
