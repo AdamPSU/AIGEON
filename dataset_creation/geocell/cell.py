@@ -5,7 +5,7 @@ import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Point, Polygon, MultiPoint, MultiPolygon
 from shapely.errors import TopologicalError
-from typing import List, Any, Tuple
+from typing import Dict, List, Any, Tuple
 from hdbscan import HDBSCAN
 from scipy.spatial import Voronoi
 from .voronoi import voronoi_finite_polygons
