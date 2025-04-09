@@ -227,24 +227,27 @@ class Cell:
         new_cell = Cell(new_name, self.admin_1, self.admin_0, points, [new_shape])
         return new_cell
 
-    def voronoi_polygons(self, coords: np.ndarray=None) -> List[Polygon]:
+    def voronoi_polygons(self, coords: np.ndarray = None) -> List[Polygon]:
         """Generates Voronoi shapes that fill out the cell shape."""
+        
         if coords is None:
-            v_coords = np.unique(self.coords, axis=0)
-        else:
-            v_coords = np.unique(coords, axis=0)
+            coords = self.coords
 
-        if len(v_coords) < 3:
-            print(f"[ERROR] Voronoi failed: insufficient points in cell {self.admin_2}")
+        # Remove duplicate coordinates and keep their original indices
+        unique_coords, unique_indices = np.unique(coords, axis=0, return_index=True)
+
+        if len(unique_coords) < 3:
+            print(f"[ERROR] Voronoi failed: insufficient unique points in cell {self.admin_2}")
             return []
 
         try:
-            vor = Voronoi(v_coords)
+            vor = Voronoi(unique_coords)
             regions, vertices = voronoi_finite_polygons(vor)
         except Exception as e:
             print(f"[ERROR] Voronoi generation failed for {self.admin_2}: {e}")
             return []
 
+        # Create polygons corresponding to unique points
         polys = []
         for region in regions:
             try:
@@ -256,12 +259,22 @@ class Cell:
                 print(f"[ERROR] Failed to create polygon in cell {self.admin_2}: {e}")
 
         try:
-            polys = [x.intersection(self.shape) for x in polys]
+            # Clip polygons to the cell shape
+            polys = [p.intersection(self.shape) for p in polys]
         except TopologicalError as e:
             print(f"[ERROR] TopologicalError during intersection in {self.admin_2}")
             raise TopologicalError(e)
 
-        return polys
+        # Re-expand to match the original point count
+        full_polygons = [None] * len(coords)
+        for i, idx in enumerate(unique_indices):
+            full_polygons[idx] = polys[i]
+
+        # Replace missing polygons with fallbacks if needed
+        fallback = Polygon()
+        full_polygons = [p if p is not None else fallback for p in full_polygons]
+
+        return full_polygons
 
     def _separate_single_cluster(self, df: pd.DataFrame, cluster: int=0) -> Tuple[List[Any]]:
         """Separates a single cluster from a geocell."""
@@ -328,67 +341,109 @@ class Cell:
 
     def _split_cell(self, add_to: Any, min_samples: int, min_cell_size: int,
                     max_cell_size: int) -> List[Any]:
-        """Splits a cell into two."""
+        """
+        The method can split a single Cell into two or more new cells,
+        depending on how many valid clusters are found by HDBSCAN.
+        """
+
+        # No need to split, already below threshold
         if self.size < max_cell_size:
             return []
 
         df = pd.DataFrame(data=self.coords, columns=['lon', 'lat'])
         df = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.lon, df.lat), crs=CRS)
 
-        try:
-            clusterer = HDBSCAN(min_cluster_size=min_cell_size, min_samples=min_samples)
-            df['cluster'] = clusterer.fit_predict(df[['lon', 'lat']].values)
-        except Exception as e:
-            print(f"[ERROR] HDBSCAN clustering failed in {self.admin_2}: {e}")
-            return []
-
+        # Creates clusters within the geocell
+        clusterer = HDBSCAN(min_cluster_size=min_cell_size, min_samples=min_samples)
+        df['cluster'] = clusterer.fit_predict(df[['lon', 'lat']].values)
+        
         unique_clusters = df['cluster'].nunique()
         if unique_clusters < 2:
-            print(f"[INFO] No meaningful clusters found in {self.admin_2}")
             return []
 
+        # If the cluster resulted in a size that's less than the minimum, it's an invalid cluster
         cluster_counts = df['cluster'].value_counts()
         small_clusters = cluster_counts[cluster_counts < min_cell_size].index.tolist()
         df.loc[df['cluster'].isin(small_clusters), 'cluster'] = -1
-
+        
+        # Identify all valid large clusters
         cluster_counts = df['cluster'].value_counts()
         large_clusters = cluster_counts[cluster_counts >= min_cell_size].index
-        non_null_large_clusters = [x for x in large_clusters if x != -1]
+        non_null_large_clusters = [
+            c for c in large_clusters 
+            if c != -1
+        ]
 
+        # There must be at least 2 large clusters
         if len(large_clusters) < 2:
             return []
 
+        # Special case: 1 real large cluster, and 1 cluster that's just noise. 
+        # We're okay with splitting further if the "noise" cluster isn't too large.
         if len(large_clusters) == 2 and len(non_null_large_clusters) == 1:
             null_df = df[df['cluster'] == -1]
             if len(null_df) > max_cell_size:
                 return []
 
+            # Donut split: one dense cluster, and some noise surrounding it
+            # Extracts the real cluster and gives it a voronoi polygon
             new_cells, remove_cells = self._separate_single_cluster(df, non_null_large_clusters[0])
         else:
+            # Normal case: 2 real clusters, and each cluster gets its own voronoi polygon
             new_cells, remove_cells = self._separate_multi_cluster(df, non_null_large_clusters)
 
-        for new_cell in new_cells:
-            self.subtract(new_cell)
-            add_to.add(new_cell)
+        """
+        Cells have been split into 1 or more new cells. 
+        
+        Goals: 
+            1. Remove the new pieces from the original cell 
+            2. Add those new pieces to CellCollection
+            3. Remove "dead" cells that should no longer exist
+        """
 
+        # Add cell to CellCollection
+        for cell in new_cells:
+            self.subtract(cell)
+            add_to.add(cell)
+
+        # Remove dead cells from CellCollection
         for cell in remove_cells:
-            add_to.discard(cell)
+            add_to.remove(cell)
+
+        """
+        Newly-created cells may be "dirty". This means
+        - MultiPolygons 
+        - Ovelapping fragments
+        - Disconnected regions 
+
+        This next step cleans them.
+        """
 
         clean_cells = new_cells
-        if len(remove_cells) == 0:
+
+        # Special case: current cell still exists and was not removed earlier
+        if not len(remove_cells):
             clean_cells += [self]
 
         self.__clean_dirty_splits(clean_cells)
 
-        proc_cells = []
-        if self.size > max_cell_size and self not in remove_cells:
-            proc_cells.append(self)
+        """
+        Are there any more cells that need to be split up again?
+        If so, add them to cell_to_split. 
+        """
 
+        cells_to_split = []
+
+        # First, check original cell. If it's too big, split again
+        if self.size > max_cell_size and self not in remove_cells:
+            cells_to_split.append(self)
+
+        # Next, check new cells. If they're too big, split again.
         for cell in new_cells:
             if cell.size > max_cell_size:
-                proc_cells.append(cell)
+                cells_to_split.append(cell)
 
-        return proc_cells
+        return cells_to_split
 
     def __clean_dirty_splits(self, cells: List[Any]):
         """Cleans messy splits that split polygons into multiple parts.
