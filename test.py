@@ -30,15 +30,20 @@ from dataset_creation.geocell.geocell_creation import GeocellCreator
 from dataset_creation.geocell.cell_collection import CellCollection
 from dataset_creation.geocell.voronoi import voronoi_finite_polygons
 
-# Create an S3 filesystem object
-fs = s3fs.S3FileSystem(anon=False)  # set anon=True if it's a public bucket
+S3 = False 
 
-# Update the path to your S3 file
-s3_path = 's3://animaldex/geocells/cells/inat2017_fused_cells.npy'
+if S3: 
+    # Create an S3 filesystem object
+    fs = s3fs.S3FileSystem(anon=False)  # set anon=True if it's a public bucket
 
-# Open with s3fs and load with numpy
-with fs.open(s3_path, 'rb') as f:
-    fused_cells = np.load(f, allow_pickle=True)
+    # Update the path to your S3 file
+    s3_path = 's3://animaldex/geocells/cells/inat2017_fused_cells.npy'
+
+    # Open with s3fs and load with numpy
+    with fs.open(s3_path, 'rb') as f:
+        fused_cells = np.load(f, allow_pickle=True)
+else: 
+    fused_cells = np.load('data/geocells/cells/inat2017_fused_cells.npy', allow_pickle=True)
 
 HDBSCAN_PARAMS = [100, 250, 500]
 
