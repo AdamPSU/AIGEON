@@ -48,7 +48,7 @@ class GeocellCreator:
             num_workers: Optional[int] = 1, 
             load_fused: Optional[bool] = True
         ):
-
+                                            
         print("Beginning geocell creation algorithm...") 
         granular_cells = self.initialize_cells(min_cell_size)
 
