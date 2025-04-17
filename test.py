@@ -30,7 +30,7 @@ from dataset_creation.geocell.geocell_creation import GeocellCreator
 from dataset_creation.geocell.cell_collection import CellCollection
 from dataset_creation.geocell.voronoi import voronoi_finite_polygons
 
-S3 = False 
+S3 = True 
 
 if S3: 
     # Create an S3 filesystem object
