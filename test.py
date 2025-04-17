@@ -84,25 +84,6 @@ def cell_splitter(cells:CellCollection, min_cell_size: int, max_cell_size: int, 
                 new_cells.extend(nc)
 
                 logging.info(f"Processed cell. Time: {(time.time() - t0):.3f}s")
-       
-            # # Parallelize the splitting of cells across cores
-            # with ThreadPoolExecutor(max_workers=num_workers) as executor:
-            #     futures = [
-            #         executor.submit(cell._split_cell, cells, params, min_cell_size, max_cell_size) 
-            #         for cell in large_cells
-            #     ]
-                
-            #     for future in as_completed(futures):
-            #         nc = future.result()
-            #         new_cells.extend(nc)
-            #         # pbar.update(1)
-
-            # # Update variables
-            # large_cells = new_cells
-            # new_cells = []
-            # round += 1
-
-            # pbar.close()
 
     return cells
 
