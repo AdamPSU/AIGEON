@@ -1,7 +1,7 @@
 import warnings; warnings.filterwarnings("ignore")
 import numpy as np
 
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed, wait
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 from tqdm import tqdm
 
 from .cell_collection import CellCollection
@@ -66,9 +66,7 @@ def cell_splitter(cells:CellCollection, min_cell_size: int, max_cell_size: int, 
                     nc = future.result()
                     new_cells.extend(nc)
                     pbar.update(1)
-
-            wait(futures)
-
+            
             # Update variables
             large_cells = new_cells
             new_cells = []

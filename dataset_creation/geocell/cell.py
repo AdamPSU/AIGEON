@@ -1,3 +1,4 @@
+from time import time 
 import numpy as np
 import shapely.wkt
 import shapely.ops
@@ -16,19 +17,19 @@ CELL_COLUMNS = ['id', 'lon', 'lat']
 GEOCELL_COLUMNS = ['admin_2', 'admin_1', 'admin_0', 'size', 'num_polygons', 'geometry']
 
 class Cell:
-    """Abstraction of a geocell."""
+    """Abstraction of a geocell.
+    """
     def __init__(self, admin_2: str, admin_1: str, admin_0: str,
                  points: List[Point], polygons: List[Polygon]):
         """Initializes a geocell.
 
         Args:
-            admin_2 (str): admin 2 identifier
-            admin_1 (str): admin 1 identifier
-            admin_0 (str): admin 0 identifier 
+            admin_2 (str): name
+            admin_1 (str): name of Admin 1 area
+            admin_0 (str): name of country
             points (List[Point]): collection of coordinates
             polygons (List[Polygon]): collection of polygons
         """
-
         self.admin_2 = str(admin_2)
         self.admin_1 = str(admin_1)
         self.admin_0 = str(admin_0)
@@ -56,12 +57,8 @@ class Cell:
             Polygon: geocell shape
         """
         union = shapely.ops.unary_union(self.polygons)
-        if not union.is_valid:
-            print(f"[WARNING] Invalid geometry in unary_union for cell: {self.admin_2}")
-        
-        union = union.buffer(0)  # Buffer(0) fixes many invalid geometries
+        union = union.buffer(0)
         return union
-
 
     @property
     def points(self) -> List[Point]:
@@ -132,21 +129,28 @@ class Cell:
         return len(self.points) == 0
 
     def subtract(self, other: Any):
-        """Subtracts other cell from current cell."""
+        """Subtracts other cell from current cell.
+
+        Args:
+            other (Any): other cell
+        """
         try:
             diff_shape = self.shape.difference(other.shape)
-            if not diff_shape.is_valid:
-                print(f"[WARNING] Invalid geometry during difference in cell: {self.admin_2}")
+            
         except TopologicalError as e:
-            print(f"[ERROR] TopologicalError in subtract: {self.admin_2}")
+            print(f'Error occurred during subtracting in cell: {self.admin_2}')
             raise TopologicalError(e)
-
+        
         self._polygons = [diff_shape.buffer(0)]
 
-        # Update points
+        # Convert Point objects to tuples
         A_tuples = {(point.x, point.y) for point in self.points}
         B_tuples = {(point.x, point.y) for point in other.points}
+
+        # Find tuples in A that are not in B
         difference_tuples = A_tuples - B_tuples
+
+        # Convert tuples back to Point objects if needed
         self._points = [x for x in self.points if (x.x, x.y) in difference_tuples]
 
     def combine(self, others: List):
@@ -157,6 +161,7 @@ class Cell:
         """
         for other in others:
             if other is self:
+                print('Tried to combine cell with itself')
                 continue 
 
             self.add_points(other.points)
@@ -191,7 +196,7 @@ class Cell:
         """
         return [self.admin_2, self.admin_1, self.admin_0, len(self.points), len(self.polygons), self.shape]
 
-    def to_geopandas(self) -> gpd.GeoDataFrame:
+    def to_pandas(self) -> gpd.GeoDataFrame:
         """Converts a cell to a geopandas DataFrame.
 
         Returns:
@@ -214,6 +219,7 @@ class Cell:
         Returns:
             Any: New cell
         """
+
         coords = tuple((p.x, p.y) for p in points)
         new_name = str(hash(coords))[:12] 
 
@@ -225,110 +231,113 @@ class Cell:
 
         # Create new cell
         new_cell = Cell(new_name, self.admin_1, self.admin_0, points, [new_shape])
+        
         return new_cell
 
-    def voronoi_polygons_map_based(self, coords: np.ndarray = None) -> Dict[Tuple[float, float], Polygon]:
-        """Generates Voronoi polygons mapped to original (x, y) coordinate tuples."""
+    def voronoi_polygons(self, coords: np.ndarray=None) -> List[Polygon]:
+        """Generates voronoi shapes that fill out the cell shape.
 
+        Args:
+            coords (np.ndarray): Coordinates to be tesselated.
+                Defaults to None.
+
+        Returns:
+            List[Polygon]: List of polygons.
+
+        Note:
+            If coords is none, cell's own points will be tesselated.
+        """
+        # Get Voronoi Regions
         if coords is None:
-            coords = self.coords
+            v_coords = np.unique(self.coords, axis=0)
+        else:
+            v_coords = np.unique(coords, axis=0)
 
-        # Remove duplicates
-        unique_coords, unique_indices = np.unique(coords, axis=0, return_index=True)
-
-        if len(unique_coords) < 3:
-            print(f"[ERROR] Voronoi failed: insufficient unique points in cell {self.admin_2}")
-            return {}
-
-        try:
-            vor = Voronoi(unique_coords)
-            regions, vertices = voronoi_finite_polygons(vor)
-        except Exception as e:
-            print(f"[ERROR] Voronoi generation failed for {self.admin_2}: {e}")
-            return {}
-
-        # Map each unique (x, y) coordinate to its Voronoi polygon
-        polygon_map = {}
-        for i, region in enumerate(regions):
-            coord = tuple(unique_coords[i])
-            try:
-                polygon = Polygon(vertices[region])
-                polygon_clipped = polygon.intersection(self.shape)
-                if not polygon_clipped.is_valid:
-                    print(f"[WARNING] Invalid Voronoi polygon in {self.admin_2}")
-                polygon_map[coord] = polygon_clipped
-            except Exception as e:
-                print(f"[ERROR] Failed to create polygon for point {coord} in cell {self.admin_2}: {e}")
-
-        return polygon_map
-
-    def _separate_single_cluster(self, df: pd.DataFrame, cluster: int = 0) -> Tuple[List[Any]]:
-        """Separates a single cluster from a geocell using a map-based approach."""
+        vor = Voronoi(v_coords)
+        regions, vertices = voronoi_finite_polygons(vor)
         
-        # Use the map-based Voronoi generator
-        polygon_map = self.voronoi_polygons_map_based()
+        # Create Polygons
+        polys = []
+        for region in regions:
+            polygon = Polygon(vertices[region])
+            polys.append(polygon)
+        
+        # Intersect with original cell shape
+        try:
+            polys = [x.intersection(self.shape) for x in polys]
+        except TopologicalError as e:
+            print(f'Error occurred in cell: {self.admin_2}')
+            raise TopologicalError(e)
 
-        # Get only the points in the specified cluster
+        # Return area belonging to each Point
+        df = pd.DataFrame({'geometry': polys})
+        df = gpd.GeoDataFrame(df, geometry='geometry')
+        points = [Point(p[0], p[1]) for p in coords] if coords is not None else self.points
+        indices = df.sindex.nearest(points, return_all=False)[1]
+        return [polys[i] for i in indices]
+
+    def _separate_single_cluster(self, df: pd.DataFrame, cluster: int=0) -> Tuple[List[Any]]:
+        """Separates a single cluster from a geocell.
+
+        Args:
+            df (pd.DataFrame): Dataframe of points.
+            cluster (int): Cluster to seperate out. Defaults to 0.
+
+        Returns:
+            Tuple[List[Any]]: New cells.
+        """
+
+        # Create polygon map
+        polygons = self.voronoi_polygons()
+
+        # Separate out points
         cluster_df = df[df['cluster'] == cluster][['lon', 'lat']]
-        if cluster_df.empty:
-            raise ValueError(f'Dataframe does not contain cluster {cluster} in cell {self.admin_2}')
+        assert len(cluster_df.index) > 0, 'Dataframe does not contain a cluster'
+        cluster_points = [self.points[i] for i in cluster_df.index]
+        cluster_polys = [polygons[i] for i in cluster_df.index]
 
-        cluster_points = [Point(row.lon, row.lat) for _, row in cluster_df.iterrows()]
-        cluster_polys = []
-        for pt in cluster_points:
-            key = (pt.x, pt.y)
-            if key in polygon_map:
-                cluster_polys.append(polygon_map[key])
-            else:
-                print(f"[WARNING] Missing Voronoi polygon for point {key} in {self.admin_2}")
-                cluster_polys.append(Polygon())  # Fallback
-
+        # Create new cell
         new_cell = self.__separate_points(cluster_points, cluster_polys, contain_points=True)
         return [new_cell], []
 
-    def _separate_multi_cluster(self, df: pd.DataFrame, non_null_large_clusters: List[int]) -> Tuple[List[Any], List[Any]]:
-        """
-        Separates multiple clusters from a geocell using Voronoi-based tessellation
-        mapped by coordinate rather than index.
-        """
-        # Separate assigned vs unassigned
-        assigned_df = df[df['cluster'].isin(non_null_large_clusters)]
-        unassigned_df = df[~df['cluster'].isin(non_null_large_clusters)]
+    def _separate_multi_cluster(self, df: pd.DataFrame, non_null_large_clusters: List[int]) -> List[Any]:
+        """Separates multiple cluster from a geocell.
 
-        # Get cluster centroids
+        Args:
+            df (pd.DataFrame): Dataframe of points.
+            non_null_large_clusters (pd.Series): Large clusters that are not unassigned.
+
+        Returns:
+            List[Any]: New cells.
+        """
+        # Assign unassigned points based on cluster centroids
+        assigned_df = df[df['cluster'].isin(non_null_large_clusters)]
+        unassigned_df = df[df['cluster'].isin(non_null_large_clusters) == False]
         cc = assigned_df.groupby(['cluster'])[['lon', 'lat']].mean().reset_index()
         cc = gpd.GeoDataFrame(cc, geometry=gpd.points_from_xy(cc.lon, cc.lat), crs=CRS)
 
-        # Assign unassigned points to nearest cluster centroid
-        try:
-            nearest_index = cc.sindex.nearest(unassigned_df.geometry, return_all=False)[1]
-            df.loc[df['cluster'].isin(non_null_large_clusters) == False, 'cluster'] = cc.iloc[nearest_index]['cluster'].values
-        except Exception as e:
-            print(f"[WARNING] Nearest centroid assignment failed in {self.admin_2}: {e}")
+        # Assign unassigned points
+        nearest_index = cc.sindex.nearest(unassigned_df.geometry, return_all=False)[1]
+        df.loc[df['cluster'].isin(non_null_large_clusters) == False, 'cluster'] = cc.iloc[nearest_index]['cluster'].values   
 
-        # Generate Voronoi polygons using centroids
-        polygon_map = self.voronoi_polygons_map_based(coords=cc[['lon', 'lat']].values)
+        # Get polygons
+        if len(cc.index) == 2:
+            return self._separate_single_cluster(df, cluster=cc.iloc[0]['cluster'])
+        
+        else:
+            polygons = self.voronoi_polygons(coords=cc[['lon', 'lat']].values)
 
-        new_cells = []
+            # Separate out clusters
+            new_cells = []
+            for cluster, polygon in zip(cc['cluster'].unique(), polygons):
+                cluster_coords = df[df['cluster'] == cluster][['lon', 'lat']]
+                cluster_points = [Point(row.lon, row.lat) for _, row in cluster_coords.iterrows()]
+                new_cell = self.__separate_points(cluster_points, [polygon], contain_points=True)
+                new_cells.append(new_cell)
 
-        # Loop through each cluster and build new geocell
-        for cluster_label in cc['cluster'].unique():
-            cluster_coords = df[df['cluster'] == cluster_label][['lon', 'lat']]
-            cluster_points = [Point(row.lon, row.lat) for _, row in cluster_coords.iterrows()]
-            cluster_centroid = tuple(cc[cc['cluster'] == cluster_label][['lon', 'lat']].values[0])
+            return new_cells, [self]
 
-            if cluster_centroid in polygon_map:
-                polygon = polygon_map[cluster_centroid]
-            else:
-                print(f"[WARNING] Missing polygon for cluster {cluster_label} in cell {self.admin_2}")
-                polygon = Polygon()  # Fallback
-
-            new_cell = self.__separate_points(cluster_points, [polygon], contain_points=True)
-            new_cells.append(new_cell)
-
-        return new_cells, [self]
-
-    def _split_cell(self, add_to: Any, min_samples: int, min_cell_size: int,
+    def _split_cell(self, cell_collection: Any, min_samples: int, min_cell_size: int,
                     max_cell_size: int) -> List[Any]:
         """
         The method can split a single Cell into two or more new cells,
@@ -345,7 +354,7 @@ class Cell:
         # Creates clusters within the geocell
         clusterer = HDBSCAN(min_cluster_size=min_cell_size, min_samples=min_samples)
         df['cluster'] = clusterer.fit_predict(df[['lon', 'lat']].values)
-        
+
         unique_clusters = df['cluster'].nunique()
         if unique_clusters < 2:
             return []
@@ -393,11 +402,11 @@ class Cell:
         # Add cell to CellCollection
         for cell in new_cells:
             self.subtract(cell)
-            add_to.add(cell)
+            cell_collection.add(cell)
 
         # Remove dead cells from CellCollection
         for cell in remove_cells:
-            add_to.remove(cell)
+            cell_collection.remove(cell)
 
         """
         Newly-created cells may be "dirty". This means
@@ -447,7 +456,7 @@ class Cell:
         for index, row in multi_polys.iterrows():
 
             # Find points
-            points = cells[index].to_geopandas()['geometry'] # .to_crs('EPSG:3857')
+            points = cells[index].to_pandas()['geometry'] # .to_crs('EPSG:3857')
             
             # Splitting Multipolygons
             all_polygons = list(row['geometry'].geoms)
@@ -507,7 +516,7 @@ class Cell:
         return hash(self.admin_2)
         
     def __repr__(self):
-        rep = f'Cell(admin_2={self.admin_2}, admin_1={self.admin_1}, admin_0={self.admin_0}, size={len(self.points)}, num_polys={len(self.polygons)})'
+        rep = f'Cell(id={self.admin_2}, admin_1={self.admin_1}, admin_0={self.admin_0}, size={len(self.points)}, num_polys={len(self.polygons)})'
         return rep
         
     def __str__(self):

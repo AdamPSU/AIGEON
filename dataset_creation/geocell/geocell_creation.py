@@ -6,7 +6,7 @@ import pandas as pd
 import geopandas as gpd
 import s3fs 
 
-from typing import Tuple, List
+from typing import Optional, List
 from tqdm import tqdm
 
 from .cell import Cell
@@ -41,9 +41,23 @@ class GeocellCreator:
         )
         self.gdf = self.gdf.to_crs(crs=CRS)
 
-    def generate(self, min_cell_size: int, max_cell_size: int, num_workers: int, load_fused=True):
+    def generate(
+            self, 
+            min_cell_size: int, 
+            max_cell_size: int, 
+            num_workers: Optional[int] = 1, 
+            load_fused: Optional[bool] = True, 
+            subset_country: Optional[str] = None
+        ):
+
         print("Beginning geocell creation algorithm...") 
         granular_cells = self.initialize_cells(min_cell_size)
+
+        if subset_country: 
+            granular_cells = [
+                cell for cell in granular_cells 
+                if cell.admin_2 == subset_country
+            ]
 
         if load_fused:
             print("Skipped cell fusing.")
@@ -52,9 +66,12 @@ class GeocellCreator:
         else: 
             fused_cells = cell_fuser(granular_cells, min_cell_size, num_workers)
         
-        divided_cells = cell_splitter(fused_cells, min_cell_size, max_cell_size, num_workers)
-        cell_df = divided_cells.to_geopandas()
-        cell_df.to_csv(self.output_file)
+        return fused_cells
+    
+        # TEMP: 
+        # divided_cells = cell_splitter(fused_cells, min_cell_size, max_cell_size, num_workers)
+        # cell_df = divided_cells.to_geopandas()
+        # cell_df.to_csv(self.output_file)
 
     def initialize_cells(self, min_cell_size: int) -> CellCollection:
         granular_boundaries = self.load_granular_boundaries()
