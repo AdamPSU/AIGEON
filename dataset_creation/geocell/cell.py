@@ -405,6 +405,9 @@ class Cell:
             cell_collection.add(cell)
 
         # Remove dead cells from CellCollection
+        valid_ids = {c.admin_2 for c in cell_collection}
+        remove_cells = [cell for cell in remove_cells if cell.admin_2 in valid_ids]
+
         for cell in remove_cells:
             cell_collection.remove(cell)
 
