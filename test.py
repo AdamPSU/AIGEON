@@ -76,18 +76,41 @@ def cell_splitter(cells:CellCollection, min_cell_size: int, max_cell_size: int, 
             # desc = f'Round {round} of splitting large cells, trying min_sample_size = {params}'
             # pbar = tqdm(total=len(large_cells), desc=desc, dynamic_ncols=True, unit='cell')
             
-            for cell in large_cells:
-                t0 = time.time() 
-                logging.info(f"Processing {cell}")
+            # for cell in large_cells:
+            #     t0 = time.time() 
+            #     logging.info(f"Processing {cell}")
 
-                nc = cell._split_cell(cells, params, min_cell_size, max_cell_size)
-                new_cells.extend(nc)
+            #     nc = cell._split_cell(cells, params, min_cell_size, max_cell_size)
+            #     new_cells.extend(nc)
 
-                logging.info(f"Processed cell. Time: {(time.time() - t0):.3f}s")
+            #     logging.info(f"Processed cell. Time: {(time.time() - t0):.3f}s")
 
+            # large_cells = new_cells
+            # new_cells = []
+            # round += 1
+
+            # Progress bar
+            desc = f'Round {round} of splitting large cells, trying min_sample_size = {params}'
+            pbar = tqdm(total=len(large_cells), desc=desc, dynamic_ncols=True, unit='cell')
+
+            # Parallelize the splitting of cells across cores
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                futures = [
+                    executor.submit(cell._split_cell, cells, params, min_cell_size, max_cell_size) 
+                    for cell in large_cells
+                ]
+                
+                for future in as_completed(futures):
+                    nc = future.result()
+                    new_cells.extend(nc)
+                    pbar.update(1)
+            
+            # Update variables
             large_cells = new_cells
             new_cells = []
             round += 1
+
+            pbar.close()
 
 
     return cells
