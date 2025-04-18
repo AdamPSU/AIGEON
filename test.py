@@ -86,8 +86,8 @@ def cell_splitter(cells:CellCollection, min_cell_size: int, max_cell_size: int, 
                 logging.info(f"Processed cell. Time: {(time.time() - t0):.3f}s")
 
                 cells.extend(new_cells)  # update main cell list
-                
-            large_cells = [cell for cell in new_cells if cell.size > max_cell_size]
+
+            large_cells = new_cells
             new_cells = []
             round += 1
 
