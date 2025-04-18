@@ -73,7 +73,7 @@ def cell_splitter(cells:CellCollection, min_cell_size: int, max_cell_size: int, 
 
         while len(large_cells) > 0:
             # Progress bar
-            desc = f'Round {round} of splitting large cells, trying min_sample_size = {params}'
+            # desc = f'Round {round} of splitting large cells, trying min_sample_size = {params}'
             # pbar = tqdm(total=len(large_cells), desc=desc, dynamic_ncols=True, unit='cell')
             
             for cell in large_cells:
@@ -84,8 +84,6 @@ def cell_splitter(cells:CellCollection, min_cell_size: int, max_cell_size: int, 
                 new_cells.extend(nc)
 
                 logging.info(f"Processed cell. Time: {(time.time() - t0):.3f}s")
-
-                cells.extend(new_cells)  # update main cell list
 
             large_cells = new_cells
             new_cells = []
