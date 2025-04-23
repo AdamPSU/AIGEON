@@ -406,6 +406,7 @@ class Cell:
 
         # Remove dead cells from CellCollection
         for cell in remove_cells:
+            cell_collection.find(cell.admin_2)
             cell_collection.remove(cell)
 
         """
