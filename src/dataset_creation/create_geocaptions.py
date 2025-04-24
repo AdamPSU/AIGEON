@@ -17,11 +17,9 @@ def create_geocaptions(metadata_s3_path, image_prefix_s3, output_s3_path):
         s3_image_path = f"{image_prefix_s3}/{relative_path}"
 
         try:
-            with s3_open(s3_image_path, 'rb') as f:
-                # This verifies the file exists and can be opened
-                Image.open(f).convert("RGB")
-        except Exception as e:
-            continue  # skip files that can't be accessed or opened
+            s3.head_object(Bucket=bucket, Key=key)
+        except s3.exceptions.ClientError:
+            continue  # Skip if file doesn't exist
 
         species = row["species"]
         lat = row["lat"]
