@@ -17,3 +17,7 @@ MAX_CELL_SIZE = 500
 # Haversine smoothing constant
 LABEL_SMOOTHING_CONSTANT = 65 
 LABEL_SMOOTHING_MONTHS = 0.3
+
+# OpenAI's pretrained implementation
+CLIP_MODEL = 'ViT-L/14@336px'
+CLIP_EMBED_DIM = 1024
