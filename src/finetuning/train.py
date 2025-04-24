@@ -45,7 +45,7 @@ def main():
     S3 = True 
 
     if S3: 
-        annotation_file = "s3://animaldex/data/inaturalist_2017/processed/geocaptions.json"
+        annotation_file = "s3://animaldex/inaturalist_2017/processed/geocaptions.json"
     else: 
         annotation_file = "data/inaturalist_2017/processed/geocaptions.json"
 

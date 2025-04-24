@@ -16,4 +16,4 @@ hdbscan
 
 # Compute / Storage
 s3fs
-smart_open
+smart_open[s3]
