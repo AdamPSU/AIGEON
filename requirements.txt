@@ -1,15 +1,19 @@
-# Core packages
-tqdm
-pandas
-numpy
+# Core Packages
 matplotlib
+numpy
+pandas
 scikit-learn
-hdbscan
-torch 
+tqdm
+torch
+transformers
 
+# CLIP (OpenAI)
+git+https://github.com/openai/CLIP.git
 
 # Geospatial
 geopandas
+hdbscan
 
-# Compute 
+# Compute / Storage
 s3fs
+smart_open
