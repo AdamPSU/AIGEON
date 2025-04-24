@@ -42,7 +42,13 @@ def main():
     model, preprocess = clip.load(CLIP_MODEL, device=device)
 
     # Create dataset w/ processed images + geocaptions
-    annotation_file = "data/inaturalist_2017/processed/geocaptions.json"
+    S3 = True 
+
+    if S3: 
+        annotation_file = "s3://animaldex/data/inaturalist_2017/processed/geocaptions.json"
+    else: 
+        annotation_file = "data/inaturalist_2017/processed/geocaptions.json"
+
     dataset = CLIPDataset(annotation_file=annotation_file, preprocess=preprocess)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 

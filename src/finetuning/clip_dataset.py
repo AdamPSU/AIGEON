@@ -1,11 +1,12 @@
 import json 
-from PIL import Image 
 
+from PIL import Image 
+from smart_open import open as smart_open_open  # disambiguate
 from torch.utils.data import Dataset
 
 class CLIPDataset(Dataset):
     def __init__(self, annotation_file, preprocess):
-        with open(annotation_file, 'r') as f:
+        with smart_open_open(annotation_file, 'r') as f:
             self.annotations = json.load(f)
 
         self.image_paths = list(self.annotations.keys())
