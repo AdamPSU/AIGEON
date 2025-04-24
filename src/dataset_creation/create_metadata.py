@@ -34,7 +34,7 @@ class GeoDataset:
         self.categories_df = self.categories_df.rename(columns={'id': 'category_id', 'name': 'species'})
         self.location_df = self.location_df.rename(columns={'id': 'image_id'})
 
-    def prepare(self) -> pd.DataFrame:
+    def create(self) -> pd.DataFrame:
         gdf_cols = ['id', 'country_code', 'lat', 'lon', 'gid_0', 'gid_1', 'gid_2']
 
         self.gdf = self.gdf.dropna(subset=['lat', 'lon'])
@@ -147,5 +147,5 @@ if __name__ == '__main__':
     image_file = 'data/inaturalist_2017/raw/image_metadata/train2017.json'
 
     dataset = GeoDataset(location_file, image_file)
-    processed_df = dataset.prepare()
+    processed_df = dataset.create()
     processed_df.to_csv('data/inaturalist_2017/processed/metadata.csv', index=False)
