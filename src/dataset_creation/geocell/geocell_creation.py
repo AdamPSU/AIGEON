@@ -46,18 +46,11 @@ class GeocellCreator:
             min_cell_size: int, 
             max_cell_size: int, 
             num_workers: Optional[int] = 1, 
-            load_fused: Optional[bool] = True, 
-            subset_country: Optional[str] = None
+            load_fused: Optional[bool] = True
         ):
-
+                                            
         print("Beginning geocell creation algorithm...") 
         granular_cells = self.initialize_cells(min_cell_size)
-
-        if subset_country: 
-            granular_cells = [
-                cell for cell in granular_cells 
-                if cell.admin_2 == subset_country
-            ]
 
         if load_fused:
             print("Skipped cell fusing.")
@@ -65,13 +58,10 @@ class GeocellCreator:
             fused_cells = CellCollection(cell_list)
         else: 
             fused_cells = cell_fuser(granular_cells, min_cell_size, num_workers)
-        
-        return fused_cells
-    
-        # TEMP: 
-        # divided_cells = cell_splitter(fused_cells, min_cell_size, max_cell_size, num_workers)
-        # cell_df = divided_cells.to_geopandas()
-        # cell_df.to_csv(self.output_file)
+             
+        divided_cells = cell_splitter(fused_cells, min_cell_size, max_cell_size, num_workers)
+        cell_df = divided_cells.to_geopandas()
+        cell_df.to_csv(self.output_file)
 
     def initialize_cells(self, min_cell_size: int) -> CellCollection:
         granular_boundaries = self.load_granular_boundaries()

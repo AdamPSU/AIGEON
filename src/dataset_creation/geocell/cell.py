@@ -408,8 +408,8 @@ class Cell:
         for cell in remove_cells:
             cell_collection.find(cell.admin_2)
             cell_collection.remove(cell)
-
         """
+        
         Newly-created cells may be "dirty". This means
         - MultiPolygons 
         - Ovelapping fragments
