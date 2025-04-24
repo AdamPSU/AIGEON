@@ -41,14 +41,8 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, preprocess = clip.load(CLIP_MODEL, device=device)
 
-    # Create dataset w/ processed images + geocaptions
-    S3 = True 
-
-    if S3: 
-        annotation_file = "s3://animaldex/inaturalist_2017/processed/geocaptions.json"
-    else: 
-        annotation_file = "data/inaturalist_2017/processed/geocaptions.json"
-
+    # Create dataset w/ processed images + geocaptions 
+    annotation_file = "s3://animaldex/inaturalist_2017/processed/geocaptions.json"
     dataset = CLIPDataset(annotation_file=annotation_file, preprocess=preprocess)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 

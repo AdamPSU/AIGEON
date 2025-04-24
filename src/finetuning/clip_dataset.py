@@ -1,12 +1,12 @@
 import json 
 
 from PIL import Image 
-from smart_open import open as smart_open_open  # disambiguate
+from smart_open import open as s3_open
 from torch.utils.data import Dataset
 
 class CLIPDataset(Dataset):
     def __init__(self, annotation_file, preprocess):
-        with smart_open_open(annotation_file, 'r') as f:
+        with s3_open(annotation_file, 'r') as f:
             self.annotations = json.load(f)
 
         self.image_paths = list(self.annotations.keys())
@@ -18,7 +18,9 @@ class CLIPDataset(Dataset):
 
     def __getitem__(self, idx):
         image_path = self.image_paths[idx]
-        image = self.preprocess(Image.open(image_path).convert("RGB"))
+
+        with s3_open(image_path, 'rb') as f:
+            image = self.preprocess(Image.open(f).convert("RGB"))
         
         text = self.texts[idx]
         

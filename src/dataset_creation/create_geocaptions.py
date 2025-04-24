@@ -1,25 +1,27 @@
 import pandas as pd
 import json
 import boto3
-from io import BytesIO
-from PIL import Image
-from smart_open import open as s3_open  # smart_open handles S3 URLs
+from pathlib import Path
+from tqdm import tqdm
 
-def create_geocaptions(metadata_s3_path, image_prefix_s3, output_s3_path):
-    # Load metadata from S3
-    df = pd.read_csv(metadata_s3_path)
+def create_geocaptions(metadata_path, local_image_prefix, s3_image_prefix, output_path):
+    # Load metadata CSV (locally)
+    df = pd.read_csv(metadata_path)
+    df['file_name'] = df['file_name'].str.removeprefix('train_val_images/')
 
     annotations = {}
     s3 = boto3.client("s3")
 
-    for _, row in df.iterrows():
-        relative_path = row["file_name"].removeprefix("train_val_images/")
-        s3_image_path = f"{image_prefix_s3}/{relative_path}"
+    # tqdm wraps the iterator to show progress
+    for _, row in tqdm(df.iterrows(), total=len(df), desc="Generating geocaptions"):
+        relative_path = row['file_name']
+        local_path = Path(local_image_prefix) / relative_path
 
-        try:
-            s3.head_object(Bucket=bucket, Key=key)
-        except s3.exceptions.ClientError:
-            continue  # Skip if file doesn't exist
+        if not local_path.exists():
+            continue  # Skip if local file doesn't exist
+
+        # Compose final S3 path for the annotation key
+        s3_image_path = f"{s3_image_prefix}/{relative_path}"
 
         species = row["species"]
         lat = row["lat"]
@@ -29,16 +31,17 @@ def create_geocaptions(metadata_s3_path, image_prefix_s3, output_s3_path):
         prompt = f"a photo of a {species} in {country}, located at latitude {lat:.3f} and longitude {lon:.3f}"
         annotations[s3_image_path] = prompt
 
-    # Write annotations back to S3
+    # Write annotations JSON to S3
     annotations_json = json.dumps(annotations, indent=2)
-    bucket, key = output_s3_path.replace("s3://", "").split("/", 1)
+    bucket, key = output_path.replace("s3://", "").split("/", 1)
     s3.put_object(Bucket=bucket, Key=key, Body=annotations_json.encode("utf-8"))
 
-    print(f"Geocaptions uploaded to {output_s3_path}")
+    print(f"Geocaptions uploaded to {output_path}")
 
 if __name__ == '__main__':
     create_geocaptions(
-        metadata_s3_path="s3://animaldex/inaturalist_2017/processed/metadata.csv",
-        image_prefix_s3="s3://animaldex/inaturalist_2017/inaturalist_2017_subset",
-        output_s3_path="s3://animaldex/inaturalist_2017/processed/geocaptions.json"
+        metadata_path="data/inaturalist_2017/processed/metadata.csv",  # local file
+        local_image_prefix="data/inaturalist_2017/inaturalist_2017_subset",  # check here
+        s3_image_prefix="s3://animaldex/inaturalist_2017/inaturalist_2017_subset",  # write this
+        output_path="s3://animaldex/inaturalist_2017/processed/geocaptions.json"
     )
