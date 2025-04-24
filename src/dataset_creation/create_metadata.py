@@ -1,12 +1,58 @@
 import json
+import rasterio
 import pandas as pd
+import numpy as np 
 import geopandas as gpd
 import warnings; warnings.filterwarnings(action='ignore')
 
+from rasterio.transform import rowcol
 from typing import Tuple
+
 from config import ADMIN_0_PATH, ADMIN_1_PATH, ADMIN_2_PATH, LOC_PATH, CRS
 
-ADMIN_NAMES = ['GID_0', 'GID_1', 'GID_2']
+CLIMATE = np.array([
+    'Unknown', 
+    "Tropical, rainforest",
+    "Tropical, monsoon",
+    "Tropical, savannah",
+    "Arid, desert, hot",
+    "Arid, desert, cold",
+    "Arid, steppe, hot",
+    "Arid, steppe, cold",
+    "Temperate, dry summer, hot summer",
+    "Temperate, dry summer, warm summer",
+    "Temperate, dry summer, cold summer",
+    "Temperate, dry winter, hot summer",
+    "Temperate, dry winter, warm summer",
+    "Temperate, dry winter, cold summer",
+    "Temperate, no dry season, hot summer",
+    "Temperate, no dry season, warm summer",
+    "Temperate, no dry season, cold summer",
+    "Cold, dry summer, hot summer",
+    "Cold, dry summer, warm summer",
+    "Cold, dry summer, cold summer",
+    "Cold, dry summer, very cold winter",
+    "Cold, dry winter, hot summer",
+    "Cold, dry winter, warm summer",
+    "Cold, dry winter, cold summer",
+    "Cold, dry winter, very cold winter",
+    "Cold, no dry season, hot summer",
+    "Cold, no dry season, warm summer",
+    "Cold, no dry season, cold summer",
+    "Cold, no dry season, very cold winter",
+    "Polar, tundra",
+    "Polar, frost"
+])
+
+def month_to_season(month):
+    if month in [12, 1, 2]:
+        return 'winter'
+    elif month in [3, 4, 5]:
+        return 'spring'
+    elif month in [6, 7, 8]:
+        return 'summer'
+    elif month in [9, 10, 11]:
+        return 'fall'
 
 class GeoDataset:
     def __init__(self, location_file: str, image_metadata_file: str):
@@ -14,18 +60,12 @@ class GeoDataset:
         with open(location_file, 'r') as f:
             loc_data = json.load(f)
 
-        self.location_df = pd.DataFrame(loc_data)
-        self.gdf = gpd.GeoDataFrame(
-            self.location_df,
-            geometry=gpd.points_from_xy(self.location_df.lon, self.location_df.lat),
-            crs=CRS
-        )
-
         # Load image metadata JSON
         with open(image_metadata_file, 'r') as f:
             image_data = json.load(f)
 
         # Extract relevant components
+        self.location_df = pd.DataFrame(loc_data)
         self.images_df = pd.DataFrame(image_data['images'])[['id', 'file_name', 'height', 'width']]
         self.annotations_df = pd.DataFrame(image_data['annotations'])[['image_id', 'category_id']]
         self.categories_df = pd.DataFrame(image_data['categories'])[['id', 'name', 'supercategory']]
@@ -34,14 +74,43 @@ class GeoDataset:
         self.categories_df = self.categories_df.rename(columns={'id': 'category_id', 'name': 'species'})
         self.location_df = self.location_df.rename(columns={'id': 'image_id'})
 
+        self.tif_path = 'data/climate/Beck_KG_V1_present_0p5.tif'
+
     def create(self) -> pd.DataFrame:
-        gdf_cols = ['id', 'country_code', 'lat', 'lon', 'gid_0', 'gid_1', 'gid_2']
+        self.gdf = self._merge_metadata()
+        self.gdf = self._load_boundary_ids(
+            self.gdf, 
+            admin_paths=[ADMIN_0_PATH, ADMIN_1_PATH, ADMIN_2_PATH]
+        )
+        self.gdf  = self._load_climate(self.tif_path)
 
-        self.gdf = self.gdf.dropna(subset=['lat', 'lon'])
-        self.gdf = self._load_boundary_ids(self.gdf)
-        self.gdf = self.gdf.copy()[gdf_cols]
+        # Extract season from date 
+        self.gdf['date'] = pd.to_datetime(self.gdf['date'], errors='coerce')
+        self.gdf['season'] = self.gdf['date'].dt.month.map(month_to_season)
 
-        return self._merge_metadata()
+        final_cols = [
+            'image_id',
+            'file_name',
+            'height',
+            'width',
+            'species',
+            'supercategory',
+            'climate',
+            'season', 
+            'lat',
+            'lon',
+            'gid_0',
+            'country',
+            'gid_1',
+            'state', 
+            'gid_2',
+            'district',  
+        ]
+
+        self.gdf = self.gdf[final_cols].copy() 
+        print("COMPLETE.")
+        
+        return self.gdf
 
     def _merge_metadata(self) -> pd.DataFrame:
         # Merge image, annotation, category
@@ -49,96 +118,87 @@ class GeoDataset:
         merged = merged.merge(self.categories_df, on='category_id', how='left')
 
         # Join with location + admin codes
-        location_df = self.gdf.rename(columns={'id': 'image_id'})  # ensure match
+        location_df = self.location_df.rename(columns={'id': 'image_id'})  # ensure match
         merged = merged.merge(location_df, on='image_id', how='left')
 
         # Drop extras
         merged = merged.drop(columns=['id', 'category_id'])
+        merged = merged.dropna()
 
-        # Reorder columns
-        merged = merged[[
-            'image_id', 'file_name', 'height', 'width',
-            'species', 'supercategory', 'lat', 'lon',
-            'country_code', 'gid_0', 'gid_1', 'gid_2'
-        ]]
+        self.gdf = gpd.GeoDataFrame(
+            merged,
+            geometry=gpd.points_from_xy(merged.lon, merged.lat),
+            crs='EPSG:4326'
+        )
 
-        return merged
+        return self.gdf
 
-    def _load_boundary_ids(self, gdf) -> Tuple[gpd.GeoDataFrame]:
-        print("LOADING ADMIN 0 BOUNDARIES")
-        id_name = "gid_0"
+    def _load_climate(self, tif_path) -> pd.DataFrame:  
+        # Load the climate raster and affine transform
 
-        admin_0 = gpd.read_file(ADMIN_0_PATH)
-        admin_0['geometry'] = admin_0['geometry'].buffer(0)
+        with rasterio.open(tif_path) as src:
+            climate_classes = src.read(1)
+            transform = src.transform
 
-        # Perform spatial join
-        gdf = gpd.sjoin(gdf, admin_0[['GID_0', 'geometry']], how='left', predicate='within')
-        gdf = gdf.rename(columns={'GID_0': 'country_code', 'index_right': id_name})
+        # Step 1: Convert all lat/lon to row/col
+        rows, cols = rowcol(transform, self.gdf['lon'].values, self.gdf['lat'].values)
+
+        # Step 2: Lookup class IDs from raster
+        class_ids = climate_classes[rows, cols]
+
+        self.gdf['climate'] = CLIMATE[class_ids]
         
-        # Fill by nearest known value
-        gdf = self._apply_nearest_match(gdf, id_name)
-        gdf[id_name] = gdf[id_name].astype(int)
+        return self.gdf
+
+    def _load_boundary_ids(
+        self, 
+        gdf: gpd.GeoDataFrame,
+        admin_paths: list,
+        gid_cols: list = ['gid_0', 'gid_1', 'gid_2'],
+        admin_keys: list = ['GID_0', 'GID_1', 'GID_2']
+    ) -> gpd.GeoDataFrame:
         
-        # Use gid_0 to fill missing country_code values using admin_0 as lookup
-        gid_to_code = admin_0['GID_0'].to_dict()
-        idx_mappings = gdf[id_name].map(gid_to_code)
-        gdf['country_code'] = gdf['country_code'].fillna(idx_mappings)
+        """Perform spatial join with admin boundaries and fill missing IDs."""
+        print("LOADING ADMINISTRATIVE BOUNDARIES...")
 
-        print("LOADING ADMIN 1 BOUNDARIES")
-        id_name = "gid_1"
+        for i, (path, key_col, new_col) in enumerate(zip(admin_paths, admin_keys, gid_cols)):
+            print(f"Processing ADMIN {i}...")
 
-        admin_1 = gpd.read_file(ADMIN_1_PATH)
-        admin_1['geometry'] = admin_1['geometry'].buffer(0)
+            admin = gpd.read_file(path)
+            gdf = gpd.sjoin(gdf, admin[['geometry', key_col]], how='left', predicate='within')
+            gdf[new_col] = gdf[key_col]
+            gdf = gdf.drop(columns=['index_right', key_col])
 
-        # Perform spatial join
-        gdf = gpd.sjoin(gdf, admin_1[['geometry']], how='left', predicate='within')
-        gdf = gdf.rename(columns={'index_right': id_name})
-        
-        # Fill by nearest known value
-        gdf = self._apply_nearest_match(gdf, id_name)
-        gdf[id_name] = gdf[id_name].astype(int)
+            gdf = self._apply_nearest_match(gdf, new_col)
+            gdf[new_col] = gdf[new_col].astype(str)
 
-        print("LOADING ADMIN 2 BOUNDARIES")
-        id_name = "gid_2"
+            if i == 2:
+                name_cols = admin[[key_col, 'COUNTRY', 'NAME_1', 'NAME_2']].copy()
+                name_cols[key_col] = name_cols[key_col].astype(str)
+                gdf[new_col] = gdf[new_col].astype(str)
 
-        admin_2 = gpd.read_file(ADMIN_2_PATH)
-        admin_2['geometry'] = admin_2['geometry'].buffer(0)
+                gdf = gdf.merge(name_cols, left_on=new_col, right_on=key_col, how='left')
+                gdf = gdf.rename(columns={
+                    'COUNTRY': 'country',
+                    'NAME_1': 'state',
+                    'NAME_2': 'district'
+                }).drop(columns=[key_col])
 
-        # Perform spatial join
-        gdf = gpd.sjoin(gdf, admin_2[['geometry']], how='left', predicate='within')
-        gdf = gdf.rename(columns={'index_right': id_name})
+        for col in gid_cols:
+            gdf[col] = pd.factorize(gdf[col])[0]
 
-        # Fill by nearest known value
-        gdf = self._apply_nearest_match(gdf, id_name)
-        gdf[id_name] = gdf[id_name].astype(int)
-
-        print("LOADED ALL BOUNDARY IDS") 
-
-        return gdf 
+        print("LOADED ALL BOUNDARY IDS.")
+        return gdf
 
     def _apply_nearest_match(self, gdf: gpd.GeoDataFrame, col: str) -> gpd.GeoDataFrame:
-        """Fill NaN values in a column based on the closest geographic match.
+        """Fill NaN values in a column based on the closest geographic match."""
+        missing = gdf[gdf[col].isnull()]
+        if missing.empty:
+            return gdf
 
-        Args:
-            df (gpd.GeoDataFrame): Dataframe to fill NaN values in.
-            col (str): Column to substitute NaNs in.
-
-        Returns:
-            gpd.GeoDataFrame: Dataframe with all NaNs replaced.
-        """
-
-        missing = gdf[gdf[col].isnull()].copy()
-        not_missing = gdf[gdf[col].notnull()].copy()
-
-        # nearest is a tuple of (missing_idx, not_missing_idx)
-        # We align these to get corresponding values
-        nearest = not_missing.sindex.nearest(missing.geometry, return_all=False)
-
-        _, match_indices = nearest
-        values = not_missing.iloc[match_indices][col].values
-
-        # Fill the missing values in the original DataFrame
-        gdf.loc[missing.index, col] = values
+        not_missing = gdf[gdf[col].notnull()].reset_index(drop=True)
+        nearest = not_missing.sindex.nearest(missing.geometry, return_all=False)[1]
+        gdf.loc[missing.index, col] = not_missing[col].values.take(nearest)
         
         return gdf
     
